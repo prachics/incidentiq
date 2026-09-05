@@ -23,7 +23,7 @@
   - network
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: warehouse-sync
   max_iterations: 6
   notes: TLS certificate expiry on warehouse-sync
@@ -54,7 +54,7 @@
   - saturation
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: notification-service
@@ -85,7 +85,7 @@
   - thundering-herd
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: inventory-service
   max_iterations: 6
   notes: Cache stampede after eviction on inventory-service
@@ -116,7 +116,7 @@
   - capacity
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: search-service
@@ -148,7 +148,7 @@
   - network
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: carrier-adapter
   max_iterations: 6
   notes: TLS certificate expiry on carrier-adapter
@@ -177,7 +177,7 @@
   - network
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: email-adapter
   max_iterations: 6
   notes: TLS certificate expiry on email-adapter
@@ -207,7 +207,7 @@
   - consistency
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: catalog-db
   max_iterations: 6
   notes: Read replica lag serving stale data on catalog-db
@@ -237,7 +237,7 @@
   - capacity
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: search-service
@@ -269,7 +269,7 @@
   - saturation
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: checkout-service
@@ -301,7 +301,7 @@
   - backoff
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: stripe-adapter
   max_iterations: 6
   notes: Third-party rate limit exceeded on stripe-adapter
@@ -330,7 +330,7 @@
   - network
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: warehouse-sync
   max_iterations: 6
   notes: TLS certificate expiry on warehouse-sync
@@ -361,7 +361,7 @@
   - circuit-breaker
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: recommendation-service
   max_iterations: 6
   notes: Downstream dependency timeout cascading upstream on recommendation-service
@@ -392,7 +392,7 @@
   - saturation
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - restart_service
   true_cause_service: checkout-service
@@ -424,7 +424,7 @@
   - thundering-herd
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: user-service
   max_iterations: 6
   notes: Cache stampede after eviction on user-service
@@ -453,7 +453,7 @@
   - capacity
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: payment-db
@@ -485,7 +485,7 @@
   - capacity
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: shipping-db
@@ -517,7 +517,7 @@
   - consistency
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: order-db
   max_iterations: 6
   notes: Read replica lag serving stale data on order-db
@@ -547,7 +547,7 @@
   - release
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - rollback_deploy
   true_cause_service: checkout-service
@@ -580,7 +580,7 @@
   - backoff
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: stripe-adapter
   max_iterations: 6
   notes: Third-party rate limit exceeded on stripe-adapter
@@ -610,7 +610,7 @@
   - broker
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - restart_service
   true_cause_service: kafka-events
@@ -643,7 +643,7 @@
   - release
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - rollback_deploy
   true_cause_service: payment-service
@@ -675,7 +675,7 @@
   - capacity
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: elasticsearch-cluster
@@ -707,7 +707,7 @@
   - release
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - rollback_deploy
   true_cause_service: fraud-service
@@ -739,7 +739,7 @@
   - consistency
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - restart_service
   true_cause_service: notification-service
@@ -772,7 +772,7 @@
   - circuit-breaker
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: payment-service
   max_iterations: 6
   notes: Downstream dependency timeout cascading upstream on payment-service
@@ -802,7 +802,7 @@
   - saturation
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: cart-service
@@ -834,7 +834,7 @@
   - runtime
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - restart_service
   true_cause_service: order-service
@@ -866,7 +866,7 @@
   - saturation
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: order-service
@@ -898,7 +898,7 @@
   - memory
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: redis-sessions
@@ -931,7 +931,7 @@
   - consistency
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - restart_service
   true_cause_service: inventory-service
@@ -962,7 +962,7 @@
   - leak
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - rollback_deploy
   true_cause_service: inventory-service
@@ -994,7 +994,7 @@
   - saturation
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: cart-service
@@ -1025,7 +1025,7 @@
   - capacity
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: user-db
@@ -1056,7 +1056,7 @@
   - consistency
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: feature-store
   max_iterations: 6
   notes: Read replica lag serving stale data on feature-store
@@ -1086,7 +1086,7 @@
   - memory
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: redis-cart
@@ -1119,7 +1119,7 @@
   - circuit-breaker
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   true_cause_service: catalog-service
   max_iterations: 6
   notes: Downstream dependency timeout cascading upstream on catalog-service
@@ -1149,7 +1149,7 @@
   - release
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - rollback_deploy
   true_cause_service: auth-service
@@ -1182,7 +1182,7 @@
   - saturation
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: order-service
@@ -1214,7 +1214,7 @@
   - memory
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: redis-cart
@@ -1246,7 +1246,7 @@
   - throughput
   expected_tools:
   - get_service_logs
-  - search_similar_incidents
+  - get_metrics
   acceptable_remediation_tools:
   - scale_service
   true_cause_service: notification-service

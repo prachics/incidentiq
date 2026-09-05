@@ -231,6 +231,29 @@ re-running an existing id *resumes* it. Correct for recovery, wrong for a fresh
 run — a re-run reported two runs as one trace. `start()` now raises unless
 `reset=True`.
 
+**Automatic retrieval makes the explicit search tool redundant.** Across every
+investigation run so far, `search_similar_incidents` was called **zero** times:
+
+| tool | calls | success |
+|---|---|---|
+| `get_service_logs` | 17 | 82.4% |
+| `get_service_dependencies` | 3 | 100% |
+| `get_metrics` | 3 | 100% |
+| `get_recent_deploys` | 1 | 100% |
+| `search_similar_incidents` | **0** | — |
+
+The `retrieve` node runs after every tool call and puts documents into context,
+so by the time the model plans its next step the evidence it would have searched
+for is already there. The tool is kept — it can search *unfiltered* across
+services, which automatic retrieval does not, since that filters by the
+extracted entities — but scenario expectations no longer list it, because
+expecting a tool the design makes unnecessary would be scoring the agent against
+a worse investigation than the one it actually performs.
+
+The general point: automatic context injection and agentic tool use overlap, and
+the overlap is worth noticing rather than shipping both and assuming both get
+used.
+
 **Local inference speed is a design constraint.** qwen2.5:14b generates at
 ~24 tok/s on an M4 Pro. An investigation is 10–12 LLM calls, so ~2 minutes; a
 100-scenario suite is therefore hours, not minutes. That changes how the project

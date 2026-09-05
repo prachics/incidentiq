@@ -164,7 +164,7 @@ def gen_single_service(r: random.Random, n: int) -> list[Scenario]:
             query=r.choice(PHRASINGS).format(svc=svc.name),
             expected_service=svc.name, expected_archetype=arch.key,
             expected_root_cause=cause, root_cause_keywords=_archetype_keywords(arch),
-            expected_tools=["get_service_logs", "search_similar_incidents"],
+            expected_tools=["get_service_logs", "get_metrics"],
             acceptable_remediation_tools=[arch.remediation_tool] if arch.remediation_tool else [],
             true_cause_service=svc.name, max_iterations=6,
             notes=f"{arch.name} on {svc.name}",
@@ -221,7 +221,7 @@ def gen_no_retrieval(r: random.Random, n: int) -> list[Scenario]:
         Scenario(
             id=f"SC-NR-{i + 1:03d}", kind="no_retrieval",
             query=topics[i % len(topics)],
-            should_abstain=True, expected_tools=["search_similar_incidents"],
+            should_abstain=True, expected_tools=[],
             max_iterations=4,
             notes="nothing relevant exists; the agent must say so rather than fabricate",
         )
