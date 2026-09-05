@@ -39,6 +39,7 @@ sys.path.insert(0, str(REPO_ROOT / "api"))
 
 from incidentiq.config import Settings, get_settings  # noqa: E402
 
+from evals import fixtures  # noqa: E402
 from evals.scenario import Scenario, load_scenarios  # noqa: E402
 
 SCENARIO_DIR = REPO_ROOT / "evals" / "scenarios"
@@ -194,9 +195,15 @@ def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None,
     })
     incident_id = f"EVAL-{scenario.id}"
     started = time.perf_counter()
+    seeded = None
 
     try:
         with InvestigationRunner(settings=cfg) as runner:
+            # Plant the evidence this scenario's failure would leave, so the
+            # diagnostic tools have something to find. Without it most
+            # scenarios were unanswerable from evidence and the eval measured
+            # whether the agent could guess the archetype from retrieval alone.
+            seeded = fixtures.apply(runner.conn, scenario)
             state = runner.start(incident_id, scenario.query, reset=True)
 
             # Approval-gated scenarios: record the human decision and resume,
@@ -236,6 +243,17 @@ def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None,
             error=f"{type(exc).__name__}: {exc}",
             failure_note=f"harness error: {traceback.format_exc(limit=2)[-200:]}",
         )
+    finally:
+        # Always clean up, including on failure. Leaked fixture rows would make
+        # every later scenario for that service look like it had evidence it
+        # was never given.
+        if seeded is not None:
+            try:
+                import psycopg as _pg
+                with _pg.connect(cfg.database_url, autocommit=True) as c:
+                    fixtures.clear(c, seeded)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def aggregate(results: list[ScenarioResult], settings: Settings) -> dict[str, Any]:

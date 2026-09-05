@@ -118,7 +118,8 @@ Optional:
 
 ```bash
 docker compose up -d langfuse        # tracing UI at localhost:3001
-docker compose --profile app up -d   # containerised API at localhost:8000
+docker compose --profile app up -d   # API at localhost:8000 (health, stats, tool catalogue;
+                                     #   investigation + approval endpoints land in Phase 4)
 ```
 
 **Requirements:** Docker, Python 3.11+. No API key needed for the default

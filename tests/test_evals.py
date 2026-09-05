@@ -302,3 +302,100 @@ class TestArchetypeVariantGrading:
         wrong = "the TLS certificate expired and the load balancer rejected connections"
         hits = sum(1 for k in sc.root_cause_keywords if k in wrong.lower())
         assert hits < 2, f"an unrelated diagnosis matched {hits} keywords"
+
+
+class TestScenarioFixtures:
+    """Scenarios must carry the infrastructure state their failure would leave.
+
+    Without this most scenarios described a failure that left no trace anywhere
+    the diagnostic tools could look, and the eval measured whether the agent
+    could guess the archetype from retrieval alone. The symptom was an agent
+    doing the right thing and being marked wrong: asked about a memory leak on
+    user-service it found no ERROR logs, reasoned it was probably waiting on a
+    slow dependency, and said so - correctly noting it had no evidence.
+    """
+
+    @pytest.fixture(scope="class")
+    def conn(self):
+        import psycopg
+        from incidentiq.config import get_settings
+        try:
+            c = psycopg.connect(get_settings().database_url, autocommit=True, connect_timeout=3)
+        except psycopg.OperationalError:
+            pytest.skip("Postgres not reachable")
+        yield c
+        c.close()
+
+    def _scenario(self, kind):
+        return next(s for s in load_scenarios(SCENARIO_DIR) if s.kind == kind)
+
+    def test_fixture_creates_matching_error_signatures(self, conn):
+        from evals import fixtures
+        sc = self._scenario("single_service")
+        svc = sc.true_cause_service
+        before = conn.execute(
+            "SELECT count(*) FROM log_entries WHERE service=%s AND level IN ('ERROR','FATAL')",
+            (svc,)).fetchone()[0]
+        state = fixtures.apply(conn, sc)
+        try:
+            after = conn.execute(
+                "SELECT count(*) FROM log_entries WHERE service=%s "
+                "AND level IN ('ERROR','FATAL')", (svc,)).fetchone()[0]
+            assert after > before, "no error evidence was planted"
+        finally:
+            fixtures.clear(conn, state)
+
+    def test_cleanup_restores_the_base_corpus_exactly(self, conn):
+        """Deleting by predicate would take the base corpus with it, and the
+        damage would only surface as a later scenario mysteriously having no
+        evidence."""
+        from evals import fixtures
+        sc = self._scenario("single_service")
+        svc = sc.true_cause_service
+        before = conn.execute(
+            "SELECT count(*) FROM log_entries WHERE service=%s", (svc,)).fetchone()[0]
+        state = fixtures.apply(conn, sc)
+        fixtures.clear(conn, state)
+        after = conn.execute(
+            "SELECT count(*) FROM log_entries WHERE service=%s", (svc,)).fetchone()[0]
+        assert after == before
+
+    def test_metric_anomaly_is_planted(self, conn):
+        import archetypes as A
+
+        from evals import fixtures
+        sc = self._scenario("single_service")
+        arch = A.BY_KEY[sc.expected_archetype]
+        state = fixtures.apply(conn, sc)
+        try:
+            rows = conn.execute(
+                "SELECT value FROM metric_points WHERE id = ANY(%s)", (state.metric_ids,)
+            ).fetchall()
+            assert rows, f"no {arch.metric} points planted"
+            values = [r[0] for r in rows]
+            assert max(values) != min(values), "the planted metric is flat"
+        finally:
+            fixtures.clear(conn, state)
+
+    def test_abstention_scenarios_get_no_evidence(self, conn):
+        """Their whole point is that there is nothing to find."""
+        from evals import fixtures
+        sc = self._scenario("no_retrieval")
+        state = fixtures.apply(conn, sc)
+        assert not state.log_ids and not state.metric_ids
+        fixtures.clear(conn, state)
+
+    def test_cascading_scenarios_plant_the_victim_symptoms(self, conn):
+        """Without symptoms on the reported service, a cascading scenario gives
+        the agent no reason to look downstream."""
+        from evals import fixtures
+        sc = self._scenario("cascading")
+        state = fixtures.apply(conn, sc)
+        try:
+            services = {r[0] for r in conn.execute(
+                "SELECT DISTINCT service FROM log_entries WHERE id = ANY(%s)",
+                (state.log_ids,)).fetchall()}
+            assert sc.true_cause_service in services
+            assert services & set(sc.victim_services), "no victim symptoms planted"
+        finally:
+            fixtures.clear(conn, state)

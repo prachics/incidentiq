@@ -47,8 +47,9 @@ services:
   api:
     profiles: ["app"]
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      # Root context: pyproject.toml is here and the package is under api/.
+      context: .
+      dockerfile: api/Dockerfile
     container_name: incidentiq-api
     restart: unless-stopped
     depends_on:
