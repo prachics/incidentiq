@@ -137,7 +137,18 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
         return r
 
     # ── Did it name the right service? ──────────────────────
-    text = f"{proposal.get('root_cause','')} {proposal.get('remediation','')}".lower()
+    # Grade against the agent's WHOLE conclusion, not one field of it. Grading
+    # on root_cause + remediation alone marked a correct answer wrong: the agent
+    # concluded "disk exhaustion on catalog-db with confidence 0.9", named the
+    # service in its summary and in the remediation arguments, and simply did
+    # not repeat it inside the root_cause string. Which field a model puts the
+    # service name in is not something the agent should be scored on.
+    text = " ".join([
+        str(proposal.get("root_cause") or ""),
+        str(proposal.get("remediation") or ""),
+        json.dumps(proposal.get("remediation_arguments") or {}, default=str),
+        str(state.get("final_summary") or ""),
+    ]).lower()
     cause_service = (scenario.true_cause_service or scenario.expected_service or "").lower()
     r.identified_cause = bool(cause_service) and cause_service in text
 

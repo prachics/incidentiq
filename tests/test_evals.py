@@ -458,3 +458,52 @@ class TestScenarioFixtures:
             "SELECT count(*) FROM eval_fixture_rows WHERE run_id = 'test-clear'"
         ).fetchone()[0]
         assert left == 0, "clear left tracking rows behind, so a later purge would re-delete"
+
+
+class TestGradingUsesTheWholeConclusion:
+    """Which field a model puts the service name in is not something the agent
+    should be scored on.
+
+    Observed: the agent concluded "the root cause of the catalog-db incident is
+    disk exhaustion, with high confidence", named the service in its summary and
+    in the remediation arguments, and did not repeat it inside the root_cause
+    string. Graded "did not name the causing service".
+    """
+
+    def test_service_named_only_in_the_summary_counts(self):
+        sc = Scenario(id="X", kind="single_service", query="q",
+                      true_cause_service="catalog-db",
+                      root_cause_keywords=["disk", "volume"],
+                      acceptable_remediation_tools=[])
+        r = _grade(sc, _state(
+            proposal=_proposal(root_cause="disk exhaustion filled the volume"),
+            final_summary="The root cause of the catalog-db incident is disk exhaustion.",
+        ))
+        assert r.identified_cause, "service named in the summary was not counted"
+        assert r.task_success
+
+    def test_service_named_only_in_remediation_arguments_counts(self):
+        sc = Scenario(id="X", kind="single_service", query="q",
+                      true_cause_service="catalog-db",
+                      root_cause_keywords=["disk"],
+                      acceptable_remediation_tools=["scale_service"])
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause="the disk filled up",
+            remediation_tool="scale_service",
+            remediation_arguments={"service": "catalog-db", "replica_count": 4},
+        )))
+        assert r.identified_cause
+        assert r.task_success
+
+    def test_naming_the_wrong_service_everywhere_still_fails(self):
+        """Widening the text must not make everything pass."""
+        sc = Scenario(id="X", kind="single_service", query="q",
+                      true_cause_service="catalog-db",
+                      root_cause_keywords=["disk"])
+        r = _grade(sc, _state(
+            proposal=_proposal(root_cause="payment-service ran out of disk",
+                               remediation_arguments={"service": "payment-service"}),
+            final_summary="payment-service was the problem.",
+        ))
+        assert not r.identified_cause
+        assert not r.task_success
