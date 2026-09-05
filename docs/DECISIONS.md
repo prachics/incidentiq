@@ -267,3 +267,150 @@ gains little from it.
 **Cost.** A schema migration and a corpus regeneration. The eval numbers from
 before this change are not comparable with those after it, which is why the
 migration file records the earlier figures in a comment.
+
+---
+
+## 11. The LLM sits behind an interface with a deterministic stub as a first-class implementation
+
+**Date:** Phase 3
+
+**Decision.** Three providers — Anthropic, Ollama, and a scripted stub. The stub
+is not a test fixture bolted on afterwards; it is the implementation almost all
+tests run against.
+
+**Why.** The structural properties of the graph — does the loop terminate, does
+state survive a crash, does a rejection re-enter planning, can an unapproved
+action execute — have nothing to do with model quality. Testing them against a
+real model would make those tests slow, costly and non-deterministic, so they
+would be run rarely and trusted less. Against the stub they run in seconds and
+never flake.
+
+The second benefit was not the motivation but turned out to matter more: the
+same 100 scenarios can run against a local 14B model and a frontier model, and
+the gap between them reported. That comparison says more than either number.
+
+**Cost.** Two provider implementations to keep in step, and a stub whose
+behaviour has to stay realistic enough to exercise the real control flow rather
+than short-circuiting to a canned answer.
+
+---
+
+## 12. Retry policy is classified by error kind, not applied uniformly
+
+**Date:** Phase 3
+
+**Decision.** `timeout` and `failed` are retried; `malformed` is not. Argument
+errors — unknown service, unknown metric, a version never deployed — are
+classified `malformed`.
+
+**Why.** This began as a bug. An unknown service name was classified as a
+transient failure, so the retry loop tried identical bad arguments three times
+per iteration and burned the entire budget without one successful tool call.
+Retrying an argument error cannot succeed by definition.
+
+Breaking the loop and returning a *specific* message is worth more than the
+retry was: unknown service names are matched with trigram similarity, so the
+model receives "unknown service 'checkout-svc'. Did you mean: checkout-service?"
+and corrects on the next iteration.
+
+**Cost.** A tool author has to choose the right status. A genuinely transient
+failure misclassified as `malformed` would not be retried.
+
+---
+
+## 13. Structured output is constrained by JSON Schema, not requested in the prompt
+
+**Date:** Phase 3
+
+**Decision.** Each reasoning node declares a Pydantic model; its JSON Schema is
+passed to the sampler for grammar-constrained decoding, and every field is
+required with empty-string sentinels instead of nullable types.
+
+**Why.** Three escalating findings, each from observed behaviour:
+
+1. "Return exactly this JSON shape" in a prompt is a request. The local model
+   honoured it at small context and degraded as prompts grew, until five of
+   seven planning calls were unparseable.
+2. Ollama's `format: "json"` fixed *syntax* but not *structure*. Past ~3000
+   prompt tokens the model returned valid JSON with an invented schema —
+   `{"incident_updates": ...}` where `root_cause` was expected. Parsing
+   succeeded, every field read back `None`, and the agent emitted an empty
+   proposal **having reasoned its way to the correct answer**. A silent failure
+   at the last step.
+3. Passing the schema constrained the field names, and the grammar still let the
+   model omit `root_cause` entirely, because Pydantic marks a field required
+   only when it has no default. Every field is now required — which forced
+   dropping nullable types, since a field can only be required if it has a
+   representable way to say "nothing here".
+
+**Cost.** Empty string means "absent", so nodes translate sentinels back to
+`None`. Schemas must stay simple enough for llama.cpp's grammar compiler, which
+falls back to unconstrained output *silently* on a schema it cannot convert.
+
+---
+
+## 14. Tool selection is validated by category, not just existence
+
+**Date:** Phase 3
+
+**Decision.** A proposed remediation must be a registered tool **and** a write
+tool. Read-only tools are rejected as firmly as hallucinated ones.
+
+**Why.** The model proposed `get_service_logs` as a remediation. It is a real
+registered tool, so an existence check passed — and it would have opened an
+approval request asking a human to authorise an action that changes nothing.
+
+The general lesson is worth more than the fix: validating that a name resolves
+is not the same as validating that the thing it resolves to belongs in this
+position.
+
+**Cost.** None material.
+
+---
+
+## 15. Eval ground truth is the archetype, not the narrative
+
+**Date:** Phase 3
+
+**Decision.** Scenarios grade the agent's diagnosis against keywords pooled from
+**every** root-cause variant of the expected archetype, requiring two absolute
+matches rather than a proportion.
+
+**Why.** The first real eval run reported a scenario as "named the service but
+not the mechanism (0/5 keywords)". The agent was right and the grader was wrong.
+Each archetype has two narratives for the same failure — `disk_full` is either
+WAL segments accumulating or autovacuum falling behind. The corpus contains
+both. The generator drew one and graded against that sentence alone; the agent
+diagnosed disk exhaustion on the correct service and described the other. The
+same answer scores 6 hits under the pooled vocabulary.
+
+The archetype is determinate; the narrative is not. Grading should only depend
+on what is determinate.
+
+**Cost.** A broader vocabulary risks accepting a wrong answer, so a test asserts
+that an unrelated diagnosis (TLS expiry against `disk_full`) still fails. A
+vocabulary broad enough to accept anything would be a worse bug than the one
+being fixed.
+
+---
+
+## 16. Local inference speed is treated as a design constraint, not an inconvenience
+
+**Date:** Phase 3
+
+**Decision.** The harness has `--sample` (stratified across scenario kinds) and
+`--max-iterations`, and any iteration cap is written into the results file.
+
+**Why.** qwen2.5:14b generates at ~24 tok/s on an M4 Pro. Prompts run ~3000
+tokens, of which retrieved documents are 45%. An investigation is 10-12 LLM
+calls, so ~2 minutes; approval scenarios that interrupt and resume are longer.
+The full 100-scenario suite is an overnight job.
+
+That changes how the project is developed rather than being a footnote.
+`--limit` was not enough because it takes the first N, which would run only one
+category — hence stratified sampling. And a capped run is not comparable with an
+uncapped one, so the cap is part of the output rather than something someone has
+to remember mentioning.
+
+**Cost.** Capped runs understate task completion. The generated report says so
+explicitly.
