@@ -93,7 +93,9 @@ cp .env.example .env
 
 docker compose up -d postgres        # Postgres 16 + pgvector
 python scripts/migrate.py            # apply schema
-python seeds/generate.py             # 500 incidents, 66 runbooks, 38 docs, mock infra
+python seeds/generate.py             # 500 incidents, 71 runbooks, 38 docs, mock infra
+python -m incidentiq.rag.indexer     # chunk + embed -> 680 searchable chunks
+python -m evals.retrieval_eval       # reproduce the Recall@5 number above
 ```
 
 That is a working, fully-seeded system with no API key required — the default
@@ -116,15 +118,21 @@ docker compose --profile app up -d   # containerised API at localhost:8000
 Run with `python -m evals.run`. Results are written to a timestamped JSON file
 and a markdown summary in `evals/results/`.
 
-| Metric | Target | Local (Qwen 2.5 14B) | Claude | Status |
-|---|---|---|---|---|
-| Task completion | ≥ 90% | — | — | Phase 3 |
-| Grounded response rate | ≥ 90% | — | — | Phase 3 |
-| Tool execution success | ≥ 95% | — | — | Phase 3 |
-| Retrieval Recall@5 | measured | — | n/a | Phase 2 |
-| Median latency | reported | — | — | Phase 3 |
-| p95 latency | reported | — | — | Phase 3 |
-| Cost per investigation | reported | $0.00 | — | Phase 3 |
+| Metric | Target | Measured | Status |
+|---|---|---|---|
+| **Retrieval Recall@5** | measured | **0.800** | ✅ Phase 2 |
+| Retrieval Hit@5 | — | 0.917 | ✅ Phase 2 |
+| Retrieval MRR | — | 0.917 | ✅ Phase 2 |
+| Retrieval median latency | — | 28.7 ms | ✅ Phase 2 |
+| Task completion | ≥ 90% | — | Phase 3 |
+| Grounded response rate | ≥ 90% | — | Phase 3 |
+| Tool execution success | ≥ 95% | — | Phase 3 |
+| Cost per investigation | reported | — | Phase 3 |
+
+Retrieval configuration: hybrid (pgvector cosine + Postgres FTS, weighted RRF),
+service pre-filter on, `BAAI/bge-small-en-v1.5` local embeddings, chunk 320 /
+overlap 64. Measured over 12 labelled situations; full ablation, fusion sweep,
+chunk sweep, and stated limitations in [`docs/EVALS.md`](docs/EVALS.md).
 
 **Scenario suite — 100 total:**
 
@@ -145,8 +153,8 @@ Methodology and per-run history: [`docs/EVALS.md`](docs/EVALS.md).
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Docker Compose, schema, migrations, seeded corpora + mock infra | **done** |
-| 2 | Chunking, embedding, hybrid search, metadata filtering, Recall@5 | next |
-| 3 | LangGraph agent, state persistence, tools, retries — then the eval harness | |
+| 2 | Chunking, embedding, hybrid search, metadata filtering, Recall@5 | **done** |
+| 3 | LangGraph agent, state persistence, tools, retries — then the eval harness | next |
 | 4 | Approval interrupts, approval API, immutable audit log | |
 | 5 | Frontend: investigation, evidence, approval, trace | |
 | 6 | MCP server exposing the diagnostic tools | |
@@ -177,6 +185,39 @@ production. What the numbers legitimately demonstrate is that the measurement
 apparatus exists and works.
 
 ---
+
+## Findings worth reading
+
+Three results from Phase 2 that were not what I expected going in.
+
+**Query enrichment matters more than any retrieval technique — Recall@5 0.461 → 0.800.**
+The first version of this eval scored retrieval on the bare on-call report
+(*"something's wrong with auth-service, customers are complaining, help?"*)
+against labels defined by failure archetype. That query carries no information
+about the failure mode, so the measurement was impossible by construction. The
+agent retrieves *after* `intake` extracts entities and after tools return log
+signatures. Both numbers are reported — the gap between them is the argument for
+the agent loop existing at all.
+
+**Hybrid retrieval buys exactly what the metadata filter would have bought.**
+With a service pre-filter, hybrid and vector-only tie at 0.800. Without it,
+vector drops to 0.728 while hybrid stays at 0.800. Hybrid's value here is not
+beating dense retrieval — it is being insensitive to whether the filter is
+available, which is the condition on the first turn, when the agent does not yet
+know which service is at fault.
+
+**Hybrid only started helping once the corpus was realistic.** Initially it
+scored at or below vector everywhere. The cause was a corpus defect, not a
+fusion defect: `HikariPool`, `OutOfMemoryError`, and `x509` appeared in
+`log_entries` and **zero** times in the incident write-ups, so the keyword
+ranker had no identifiers to match. Migration `005` adds quoted error lines to
+incidents, as a real postmortem would. The general lesson: hybrid retrieval
+beats dense retrieval when documents contain tokens embeddings cannot represent,
+and a corpus of pure prose gains little.
+
+Full working — including a chunk-size sweep that came out a plateau rather than
+a peak, and a reproducibility check on the approximate index — in
+[`docs/EVALS.md`](docs/EVALS.md).
 
 ## Documentation
 

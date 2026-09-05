@@ -32,7 +32,7 @@
       "remediation_tool": "rollback_deploy",
       "user_query": "getting paged for web-frontend, latency is way up. what's going on?",
       "cascade_visible_in": [],
-      "triggering_deploy": "DEP-00153"
+      "triggering_deploy": "DEP-00144"
     },
     {
       "id": "LIVE-03",
@@ -86,7 +86,7 @@
         "api-gateway",
         "web-frontend"
       ],
-      "triggering_deploy": "DEP-00154"
+      "triggering_deploy": "DEP-00145"
     },
     {
       "id": "LIVE-06",
@@ -103,7 +103,7 @@
       "cascade_visible_in": [
         "web-frontend"
       ],
-      "triggering_deploy": "DEP-00155"
+      "triggering_deploy": "DEP-00146"
     },
     {
       "id": "LIVE-07",
@@ -218,15 +218,13 @@
       "service": "auth-service",
       "archetype": "db_pool_exhausted",
       "relevant_incident_ids": [
-        "INC-00031",
-        "INC-00111",
-        "INC-00156",
-        "INC-00242",
-        "INC-00290",
-        "INC-00365",
-        "INC-00463"
+        "INC-00028",
+        "INC-00053",
+        "INC-00305",
+        "INC-00388",
+        "INC-00473"
       ],
-      "relevant_count": 7,
+      "relevant_count": 5,
       "expect_no_useful_retrieval": false
     },
     {
@@ -235,12 +233,13 @@
       "service": "web-frontend",
       "archetype": "bad_deploy_regression",
       "relevant_incident_ids": [
-        "INC-00052",
-        "INC-00055",
-        "INC-00072",
-        "INC-00312"
+        "INC-00058",
+        "INC-00234",
+        "INC-00323",
+        "INC-00353",
+        "INC-00380"
       ],
-      "relevant_count": 4,
+      "relevant_count": 5,
       "expect_no_useful_retrieval": false
     },
     {
@@ -249,21 +248,23 @@
       "service": "search-service",
       "archetype": "search_shard_unassigned",
       "relevant_incident_ids": [
-        "INC-00013",
-        "INC-00020",
-        "INC-00057",
-        "INC-00113",
-        "INC-00129",
-        "INC-00146",
-        "INC-00226",
-        "INC-00352",
-        "INC-00396",
-        "INC-00409",
-        "INC-00418",
-        "INC-00448",
-        "INC-00473"
+        "INC-00009",
+        "INC-00043",
+        "INC-00055",
+        "INC-00145",
+        "INC-00148",
+        "INC-00160",
+        "INC-00178",
+        "INC-00217",
+        "INC-00236",
+        "INC-00301",
+        "INC-00319",
+        "INC-00325",
+        "INC-00386",
+        "INC-00411",
+        "INC-00425"
       ],
-      "relevant_count": 13,
+      "relevant_count": 15,
       "expect_no_useful_retrieval": false
     },
     {
@@ -272,13 +273,17 @@
       "service": "carrier-adapter",
       "archetype": "upstream_rate_limit",
       "relevant_incident_ids": [
-        "INC-00067",
-        "INC-00123",
-        "INC-00237",
-        "INC-00275",
-        "INC-00419"
+        "INC-00008",
+        "INC-00011",
+        "INC-00110",
+        "INC-00158",
+        "INC-00222",
+        "INC-00255",
+        "INC-00260",
+        "INC-00367",
+        "INC-00471"
       ],
-      "relevant_count": 5,
+      "relevant_count": 9,
       "expect_no_useful_retrieval": false
     },
     {
@@ -287,13 +292,11 @@
       "service": "checkout-service",
       "archetype": "config_drift",
       "relevant_incident_ids": [
-        "INC-00049",
-        "INC-00206",
-        "INC-00425",
-        "INC-00462",
-        "INC-00496"
+        "INC-00244",
+        "INC-00307",
+        "INC-00352"
       ],
-      "relevant_count": 5,
+      "relevant_count": 3,
       "expect_no_useful_retrieval": false
     },
     {
@@ -302,16 +305,12 @@
       "service": "api-gateway",
       "archetype": "config_drift",
       "relevant_incident_ids": [
-        "INC-00131",
-        "INC-00189",
-        "INC-00241",
-        "INC-00300",
-        "INC-00411",
-        "INC-00425",
-        "INC-00441",
-        "INC-00462"
+        "INC-00115",
+        "INC-00141",
+        "INC-00223",
+        "INC-00429"
       ],
-      "relevant_count": 8,
+      "relevant_count": 4,
       "expect_no_useful_retrieval": false
     },
     {
@@ -320,11 +319,11 @@
       "service": "shipping-service",
       "archetype": "db_pool_exhausted",
       "relevant_incident_ids": [
-        "INC-00031",
-        "INC-00111",
-        "INC-00170",
-        "INC-00242",
-        "INC-00493"
+        "INC-00028",
+        "INC-00159",
+        "INC-00253",
+        "INC-00305",
+        "INC-00430"
       ],
       "relevant_count": 5,
       "expect_no_useful_retrieval": false
@@ -335,16 +334,11 @@
       "service": "shipping-db",
       "archetype": "replica_lag",
       "relevant_incident_ids": [
-        "INC-00050",
-        "INC-00119",
-        "INC-00220",
-        "INC-00286",
-        "INC-00363",
-        "INC-00371",
-        "INC-00484",
-        "INC-00499"
+        "INC-00036",
+        "INC-00233",
+        "INC-00428"
       ],
-      "relevant_count": 8,
+      "relevant_count": 3,
       "expect_no_useful_retrieval": false
     },
     {
@@ -353,8 +347,8 @@
       "service": "email-adapter",
       "archetype": "upstream_rate_limit",
       "relevant_incident_ids": [
-        "INC-00041",
-        "INC-00250"
+        "INC-00355",
+        "INC-00441"
       ],
       "relevant_count": 2,
       "expect_no_useful_retrieval": false
@@ -365,12 +359,17 @@
       "service": "order-service",
       "archetype": "thread_pool_saturation",
       "relevant_incident_ids": [
-        "INC-00092",
-        "INC-00354",
-        "INC-00369",
-        "INC-00486"
+        "INC-00031",
+        "INC-00090",
+        "INC-00164",
+        "INC-00249",
+        "INC-00292",
+        "INC-00315",
+        "INC-00446",
+        "INC-00448",
+        "INC-00499"
       ],
-      "relevant_count": 4,
+      "relevant_count": 9,
       "expect_no_useful_retrieval": false
     },
     {
@@ -379,24 +378,23 @@
       "service": "order-db",
       "archetype": "disk_full",
       "relevant_incident_ids": [
-        "INC-00036",
-        "INC-00059",
-        "INC-00121",
-        "INC-00145",
-        "INC-00147",
-        "INC-00168",
-        "INC-00208",
-        "INC-00233",
-        "INC-00268",
-        "INC-00324",
-        "INC-00329",
-        "INC-00338",
-        "INC-00344",
-        "INC-00359",
-        "INC-00446",
-        "INC-00477"
+        "INC-00007",
+        "INC-00014",
+        "INC-00089",
+        "INC-00103",
+        "INC-00129",
+        "INC-00157",
+        "INC-00170",
+        "INC-00185",
+        "INC-00257",
+        "INC-00358",
+        "INC-00396",
+        "INC-00414",
+        "INC-00443",
+        "INC-00444",
+        "INC-00490"
       ],
-      "relevant_count": 16,
+      "relevant_count": 15,
       "expect_no_useful_retrieval": false
     },
     {
@@ -405,21 +403,14 @@
       "service": "stripe-adapter",
       "archetype": "upstream_rate_limit",
       "relevant_incident_ids": [
-        "INC-00011",
-        "INC-00125",
-        "INC-00179",
-        "INC-00225",
-        "INC-00240",
-        "INC-00266",
-        "INC-00271",
-        "INC-00282",
-        "INC-00373",
-        "INC-00379",
-        "INC-00404",
-        "INC-00414",
-        "INC-00429"
+        "INC-00012",
+        "INC-00026",
+        "INC-00063",
+        "INC-00084",
+        "INC-00152",
+        "INC-00456"
       ],
-      "relevant_count": 13,
+      "relevant_count": 6,
       "expect_no_useful_retrieval": false
     }
   ]

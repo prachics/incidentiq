@@ -173,6 +173,13 @@ def gen_incidents(r: random.Random) -> list[dict]:
             "root_cause": render(r.choice(arch.root_cause), **kw),
             "resolution": render(r.choice(arch.resolution), **kw),
             "tags": list(arch.tags) + [svc.owner_team, svc.tier],
+            # The error lines the on-call engineer quoted in the write-up.
+            # Real postmortems include these; without them the corpus has no
+            # distinctive identifiers and keyword retrieval has nothing to grip.
+            "error_signatures": [
+                render(line, **kw)
+                for line in r.sample(arch.log_lines, k=min(2, len(arch.log_lines)))
+            ],
             # Not stored in the DB - used to build the labelled retrieval set.
             "_archetype": arch.key,
             "_dep": dep,
@@ -619,9 +626,11 @@ def load(conn: psycopg.Connection, force: bool) -> dict[str, int]:
         )
         cur.executemany(
             "INSERT INTO incidents (id, title, service, severity, occurred_at, resolved_at,"
-            " symptoms, root_cause, resolution, tags) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            " symptoms, root_cause, resolution, tags, error_signatures)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             [(i["id"], i["title"], i["service"], i["severity"], i["occurred_at"],
-              i["resolved_at"], i["symptoms"], i["root_cause"], i["resolution"], i["tags"])
+              i["resolved_at"], i["symptoms"], i["root_cause"], i["resolution"],
+              i["tags"], i["error_signatures"])
              for i in incidents],
         )
         cur.executemany(
