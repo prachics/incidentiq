@@ -162,8 +162,6 @@
   expected_tools:
   - get_service_dependencies
   - get_service_logs
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: redis-cart
   victim_services:
   - cart-service
@@ -198,8 +196,6 @@
   expected_tools:
   - get_service_dependencies
   - get_service_logs
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: redis-cart
   victim_services:
   - cart-service
@@ -563,8 +559,6 @@
   expected_tools:
   - get_service_dependencies
   - get_service_logs
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: user-db
   victim_services:
   - auth-service
@@ -631,8 +625,6 @@
   expected_tools:
   - get_service_dependencies
   - get_service_logs
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: elasticsearch-cluster
   victim_services:
   - search-service
