@@ -1,0 +1,588 @@
+- id: SC-CA-001
+  kind: cascading
+  query: inventory-service is timing out but its own metrics look fine
+  expected_service: warehouse-sync
+  expected_archetype: cert_expiry
+  expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
+    certificate was still valid, which is why expiry monitoring did not fire.
+  root_cause_keywords:
+  - intermediate
+  - certificate
+  - expired
+  - expiry
+  - monitoring
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: warehouse-sync
+  victim_services:
+  - inventory-service
+  - checkout-service
+  max_iterations: 8
+  notes: inventory-service is a victim; cause is TLS certificate expiry on warehouse-sync
+- id: SC-CA-002
+  kind: cascading
+  query: order-service latency is way up, CPU is normal though
+  expected_service: order-db
+  expected_archetype: replica_lag
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
+  root_cause_keywords:
+  - analytical
+  - replica
+  - blocked
+  - replay
+  - progressively
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: order-db
+  victim_services:
+  - order-service
+  - api-gateway
+  - checkout-service
+  max_iterations: 8
+  notes: order-service is a victim; cause is Read replica lag serving stale data on order-db
+- id: SC-CA-003
+  kind: cascading
+  query: requests through fraud-service are hanging. is it fraud-service or something else?
+  expected_service: ml-scoring-service
+  expected_archetype: traffic_surge
+  expected_root_cause: A campaign launched without capacity planning notice. ml-scoring-service was provisioned
+    for typical peak, not six times it.
+  root_cause_keywords:
+  - campaign
+  - launched
+  - without
+  - capacity
+  - planning
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: ml-scoring-service
+  victim_services:
+  - fraud-service
+  - payment-service
+  max_iterations: 8
+  notes: fraud-service is a victim; cause is Traffic surge beyond provisioned capacity on ml-scoring-service
+- id: SC-CA-004
+  kind: cascading
+  query: api-gateway latency is way up, CPU is normal though
+  expected_service: catalog-service
+  expected_archetype: bad_deploy_regression
+  expected_root_cause: Release v3.12.0 of catalog-service changed a response field from a string to an
+    object without a compatibility shim. Callers still on the old contract failed to deserialise it, producing
+    500s for exactly the fraction of traffic on old clients.
+  root_cause_keywords:
+  - release
+  - changed
+  - response
+  - string
+  - object
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: catalog-service
+  victim_services:
+  - api-gateway
+  - web-frontend
+  max_iterations: 8
+  notes: api-gateway is a victim; cause is Regression introduced by a deploy on catalog-service
+- id: SC-CA-005
+  kind: cascading
+  query: cart-service latency is way up, CPU is normal though
+  expected_service: redis-cart
+  expected_archetype: cache_node_eviction
+  expected_root_cause: redis-cart reached its maxmemory limit and the allkeys-lru policy began evicting
+    hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
+    to the memory allocation.
+  root_cause_keywords:
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: redis-cart
+  victim_services:
+  - cart-service
+  - checkout-service
+  max_iterations: 8
+  notes: cart-service is a victim; cause is Cache node evicting under memory pressure on redis-cart
+- id: SC-CA-006
+  kind: cascading
+  query: cart-service latency is way up, CPU is normal though
+  expected_service: redis-cart
+  expected_archetype: cache_node_eviction
+  expected_root_cause: redis-cart reached its maxmemory limit and the allkeys-lru policy began evicting
+    hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
+    to the memory allocation.
+  root_cause_keywords:
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: redis-cart
+  victim_services:
+  - cart-service
+  - checkout-service
+  max_iterations: 8
+  notes: cart-service is a victim; cause is Cache node evicting under memory pressure on redis-cart
+- id: SC-CA-007
+  kind: cascading
+  query: inventory-service is timing out but its own metrics look fine
+  expected_service: inventory-db
+  expected_archetype: replica_lag
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
+  root_cause_keywords:
+  - analytical
+  - replica
+  - blocked
+  - replay
+  - progressively
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: inventory-db
+  victim_services:
+  - inventory-service
+  - checkout-service
+  max_iterations: 8
+  notes: inventory-service is a victim; cause is Read replica lag serving stale data on inventory-db
+- id: SC-CA-008
+  kind: cascading
+  query: inventory-service is timing out but its own metrics look fine
+  expected_service: inventory-db
+  expected_archetype: replica_lag
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
+  root_cause_keywords:
+  - analytical
+  - replica
+  - blocked
+  - replay
+  - progressively
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: inventory-db
+  victim_services:
+  - inventory-service
+  - checkout-service
+  max_iterations: 8
+  notes: inventory-service is a victim; cause is Read replica lag serving stale data on inventory-db
+- id: SC-CA-009
+  kind: cascading
+  query: inventory-service looks slow but I don't think the problem is inventory-service
+  expected_service: warehouse-sync
+  expected_archetype: cert_expiry
+  expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
+    certificate was still valid, which is why expiry monitoring did not fire.
+  root_cause_keywords:
+  - intermediate
+  - certificate
+  - expired
+  - expiry
+  - monitoring
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: warehouse-sync
+  victim_services:
+  - inventory-service
+  - checkout-service
+  max_iterations: 8
+  notes: inventory-service is a victim; cause is TLS certificate expiry on warehouse-sync
+- id: SC-CA-010
+  kind: cascading
+  query: api-gateway latency is way up, CPU is normal though
+  expected_service: checkout-service
+  expected_archetype: db_pool_exhausted
+  expected_root_cause: All payment-service connections were checked out and never returned. A code path
+    added in the previous release failed to close its connection on the error branch, so each failed request
+    permanently leaked one connection from the pool.
+  root_cause_keywords:
+  - connections
+  - checked
+  - returned
+  - previous
+  - release
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: checkout-service
+  victim_services:
+  - api-gateway
+  - web-frontend
+  max_iterations: 8
+  notes: api-gateway is a victim; cause is Database connection pool exhausted on checkout-service
+- id: SC-CA-011
+  kind: cascading
+  query: requests through shipping-service are hanging. is it shipping-service or something else?
+  expected_service: shipping-db
+  expected_archetype: replica_lag
+  expected_root_cause: Replication lag on shipping-db reached 240 seconds. A bulk backfill job saturated
+    the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
+    traffic load-balanced across replicas therefore returned data up to four minutes old.
+  root_cause_keywords:
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: shipping-db
+  victim_services:
+  - shipping-service
+  - api-gateway
+  max_iterations: 8
+  notes: shipping-service is a victim; cause is Read replica lag serving stale data on shipping-db
+- id: SC-CA-012
+  kind: cascading
+  query: notification-service latency is way up, CPU is normal though
+  expected_service: email-adapter
+  expected_archetype: upstream_rate_limit
+  expected_root_cause: The provider's rate limit was exceeded during peak traffic. A retry loop with no
+    backoff turned each rate-limited request into four, so the limit was breached further the harder the
+    system tried to recover.
+  root_cause_keywords:
+  - exceeded
+  - during
+  - traffic
+  - backoff
+  - turned
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: email-adapter
+  victim_services:
+  - notification-service
+  max_iterations: 8
+  notes: notification-service is a victim; cause is Third-party rate limit exceeded on email-adapter
+- id: SC-CA-013
+  kind: cascading
+  query: requests through shipping-service are hanging. is it shipping-service or something else?
+  expected_service: shipping-db
+  expected_archetype: replica_lag
+  expected_root_cause: Replication lag on shipping-db reached 240 seconds. A bulk backfill job saturated
+    the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
+    traffic load-balanced across replicas therefore returned data up to four minutes old.
+  root_cause_keywords:
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: shipping-db
+  victim_services:
+  - shipping-service
+  - api-gateway
+  max_iterations: 8
+  notes: shipping-service is a victim; cause is Read replica lag serving stale data on shipping-db
+- id: SC-CA-014
+  kind: cascading
+  query: notification-service is timing out but its own metrics look fine
+  expected_service: email-adapter
+  expected_archetype: upstream_rate_limit
+  expected_root_cause: The provider's rate limit was exceeded during peak traffic. A retry loop with no
+    backoff turned each rate-limited request into four, so the limit was breached further the harder the
+    system tried to recover.
+  root_cause_keywords:
+  - exceeded
+  - during
+  - traffic
+  - backoff
+  - turned
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: email-adapter
+  victim_services:
+  - notification-service
+  max_iterations: 8
+  notes: notification-service is a victim; cause is Third-party rate limit exceeded on email-adapter
+- id: SC-CA-015
+  kind: cascading
+  query: order-service looks slow but I don't think the problem is order-service
+  expected_service: order-db
+  expected_archetype: replica_lag
+  expected_root_cause: Replication lag on order-db reached 240 seconds. A bulk backfill job saturated
+    the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
+    traffic load-balanced across replicas therefore returned data up to four minutes old.
+  root_cause_keywords:
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: order-db
+  victim_services:
+  - order-service
+  - api-gateway
+  - checkout-service
+  max_iterations: 8
+  notes: order-service is a victim; cause is Read replica lag serving stale data on order-db
+- id: SC-CA-016
+  kind: cascading
+  query: notification-service looks slow but I don't think the problem is notification-service
+  expected_service: email-adapter
+  expected_archetype: upstream_rate_limit
+  expected_root_cause: The provider's rate limit was exceeded during peak traffic. A retry loop with no
+    backoff turned each rate-limited request into four, so the limit was breached further the harder the
+    system tried to recover.
+  root_cause_keywords:
+  - exceeded
+  - during
+  - traffic
+  - backoff
+  - turned
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: email-adapter
+  victim_services:
+  - notification-service
+  max_iterations: 8
+  notes: notification-service is a victim; cause is Third-party rate limit exceeded on email-adapter
+- id: SC-CA-017
+  kind: cascading
+  query: auth-service looks slow but I don't think the problem is auth-service
+  expected_service: user-db
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in user-db, so dead
+    tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - autovacuum
+  - unable
+  - largest
+  - tuples
+  - accumulated
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: user-db
+  victim_services:
+  - auth-service
+  - api-gateway
+  max_iterations: 8
+  notes: auth-service is a victim; cause is Disk exhaustion on a datastore on user-db
+- id: SC-CA-018
+  kind: cascading
+  query: api-gateway latency is way up, CPU is normal though
+  expected_service: recommendation-service
+  expected_archetype: cache_stampede
+  expected_root_cause: A cache flush during deploy left feature-store empty. Every in-flight request missed
+    and recomputed at once rather than the first one populating the entry for the rest.
+  root_cause_keywords:
+  - during
+  - deploy
+  - missed
+  - recomputed
+  - rather
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  true_cause_service: recommendation-service
+  victim_services:
+  - api-gateway
+  - web-frontend
+  max_iterations: 8
+  notes: api-gateway is a victim; cause is Cache stampede after eviction on recommendation-service
+- id: SC-CA-019
+  kind: cascading
+  query: search-service is timing out but its own metrics look fine
+  expected_service: elasticsearch-cluster
+  expected_archetype: search_shard_unassigned
+  expected_root_cause: "Two primary shards on elasticsearch-cluster were unassigned after a node left\
+    \ the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had\
+    \ crossed the high watermark. Queries silently returned partial results rather than failing."
+  root_cause_keywords:
+  - primary
+  - shards
+  - unassigned
+  - cluster
+  - allocation
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: elasticsearch-cluster
+  victim_services:
+  - search-service
+  - api-gateway
+  - catalog-service
+  max_iterations: 8
+  notes: search-service is a victim; cause is Search cluster shards unassigned on elasticsearch-cluster
+- id: SC-CA-020
+  kind: cascading
+  query: api-gateway is timing out but its own metrics look fine
+  expected_service: user-service
+  expected_archetype: memory_leak_oom
+  expected_root_cause: A listener registered per request was never unregistered, so each request added
+    a permanently reachable object. Heap grew until the container limit was reached.
+  root_cause_keywords:
+  - listener
+  - registered
+  - unregistered
+  - permanently
+  - reachable
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: user-service
+  victim_services:
+  - api-gateway
+  - web-frontend
+  max_iterations: 8
+  notes: api-gateway is a victim; cause is Memory leak leading to OOM kills on user-service
+- id: SC-CA-021
+  kind: cascading
+  query: requests through api-gateway are hanging. is it api-gateway or something else?
+  expected_service: catalog-service
+  expected_archetype: traffic_surge
+  expected_root_cause: Traffic exceeded catalog-service's provisioned capacity. Autoscaling was configured
+    on CPU with a five-minute stabilisation window, so it reacted far too slowly for a spike that arrived
+    in under a minute.
+  root_cause_keywords:
+  - traffic
+  - exceeded
+  - provisioned
+  - capacity
+  - autoscaling
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: catalog-service
+  victim_services:
+  - api-gateway
+  - web-frontend
+  max_iterations: 8
+  notes: api-gateway is a victim; cause is Traffic surge beyond provisioned capacity on catalog-service
+- id: SC-CA-022
+  kind: cascading
+  query: fraud-service is timing out but its own metrics look fine
+  expected_service: ml-scoring-service
+  expected_archetype: config_drift
+  expected_root_cause: An environment variable was set in the deployment manifest but absent from the
+    canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
+  root_cause_keywords:
+  - environment
+  - variable
+  - deployment
+  - manifest
+  - absent
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: ml-scoring-service
+  victim_services:
+  - fraud-service
+  - payment-service
+  max_iterations: 8
+  notes: fraud-service is a victim; cause is Configuration drift between environments on ml-scoring-service
+- id: SC-CA-023
+  kind: cascading
+  query: requests through api-gateway are hanging. is it api-gateway or something else?
+  expected_service: recommendation-service
+  expected_archetype: config_drift
+  expected_root_cause: An environment variable was set in the deployment manifest but absent from the
+    canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
+  root_cause_keywords:
+  - environment
+  - variable
+  - deployment
+  - manifest
+  - absent
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: recommendation-service
+  victim_services:
+  - api-gateway
+  - web-frontend
+  max_iterations: 8
+  notes: api-gateway is a victim; cause is Configuration drift between environments on recommendation-service
+- id: SC-CA-024
+  kind: cascading
+  query: payment-service looks slow but I don't think the problem is payment-service
+  expected_service: fraud-service
+  expected_archetype: memory_leak_oom
+  expected_root_cause: A listener registered per request was never unregistered, so each request added
+    a permanently reachable object. Heap grew until the container limit was reached.
+  root_cause_keywords:
+  - listener
+  - registered
+  - unregistered
+  - permanently
+  - reachable
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: fraud-service
+  victim_services:
+  - payment-service
+  - checkout-service
+  max_iterations: 8
+  notes: payment-service is a victim; cause is Memory leak leading to OOM kills on fraud-service
+- id: SC-CA-025
+  kind: cascading
+  query: checkout-service is timing out but its own metrics look fine
+  expected_service: cart-service
+  expected_archetype: memory_leak_oom
+  expected_root_cause: A listener registered per request was never unregistered, so each request added
+    a permanently reachable object. Heap grew until the container limit was reached.
+  root_cause_keywords:
+  - listener
+  - registered
+  - unregistered
+  - permanently
+  - reachable
+  expected_tools:
+  - get_service_dependencies
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: cart-service
+  victim_services:
+  - checkout-service
+  - api-gateway
+  max_iterations: 8
+  notes: checkout-service is a victim; cause is Memory leak leading to OOM kills on cart-service
