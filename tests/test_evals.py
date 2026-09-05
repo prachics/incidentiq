@@ -399,3 +399,46 @@ class TestScenarioFixtures:
             assert services & set(sc.victim_services), "no victim symptoms planted"
         finally:
             fixtures.clear(conn, state)
+
+    def test_orphaned_fixtures_are_tracked_and_purgeable(self, conn):
+        """Cleanup state must survive an unclean exit.
+
+        It did not: `kill -9` on an eval run skipped the finally block and
+        orphaned 137 log rows, 1 deploy row, and ~153 metric rows. The metric
+        rows had no marker at all, so they could not be told apart from the base
+        corpus. Leaked evidence for one service becomes background noise for
+        every later scenario, and the numbers drift with nothing failing.
+        """
+        from evals import fixtures
+        sc = self._scenario("single_service")
+
+        baseline_logs = conn.execute("SELECT count(*) FROM log_entries").fetchone()[0]
+        baseline_metrics = conn.execute("SELECT count(*) FROM metric_points").fetchone()[0]
+
+        # Simulate a run that dies before its cleanup: apply, then drop the
+        # in-process handle entirely.
+        state = fixtures.apply(conn, sc, run_id="test-orphan")
+        assert state.log_ids and state.metric_ids
+        tracked = conn.execute(
+            "SELECT count(*) FROM eval_fixture_rows WHERE run_id = 'test-orphan'"
+        ).fetchone()[0]
+        assert tracked == len(state.log_ids) + len(state.metric_ids) + len(state.deploy_ids)
+        del state
+
+        # A later run purges what the dead one left, from the database alone.
+        purged = fixtures.purge_orphans(conn)
+        assert purged, "nothing was purged"
+        assert conn.execute("SELECT count(*) FROM log_entries").fetchone()[0] == baseline_logs
+        assert conn.execute(
+            "SELECT count(*) FROM metric_points").fetchone()[0] == baseline_metrics
+        assert conn.execute("SELECT count(*) FROM eval_fixture_rows").fetchone()[0] == 0
+
+    def test_clear_removes_its_own_tracking_rows(self, conn):
+        from evals import fixtures
+        sc = self._scenario("single_service")
+        state = fixtures.apply(conn, sc, run_id="test-clear")
+        fixtures.clear(conn, state)
+        left = conn.execute(
+            "SELECT count(*) FROM eval_fixture_rows WHERE run_id = 'test-clear'"
+        ).fetchone()[0]
+        assert left == 0, "clear left tracking rows behind, so a later purge would re-delete"

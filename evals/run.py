@@ -46,6 +46,9 @@ SCENARIO_DIR = REPO_ROOT / "evals" / "scenarios"
 # Set from --max-iterations so it lands in the results file: a run with a
 # reduced budget is not comparable with a full one, and the number must say so.
 ITERATION_CAP: int | None = None
+# Identifies this process's fixture rows, so a later run can tell its own
+# leftovers from another's.
+RUN_ID: str = "adhoc"
 RESULTS_DIR = REPO_ROOT / "evals" / "results"
 
 
@@ -203,7 +206,7 @@ def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None,
             # diagnostic tools have something to find. Without it most
             # scenarios were unanswerable from evidence and the eval measured
             # whether the agent could guess the archetype from retrieval alone.
-            seeded = fixtures.apply(runner.conn, scenario)
+            seeded = fixtures.apply(runner.conn, scenario, run_id=RUN_ID)
             state = runner.start(incident_id, scenario.query, reset=True)
 
             # Approval-gated scenarios: record the human decision and resume,
@@ -440,8 +443,18 @@ def main() -> int:
     if updates:
         settings = settings.model_copy(update=updates)
 
-    global ITERATION_CAP
+    global ITERATION_CAP, RUN_ID
     ITERATION_CAP = args.max_iterations
+    RUN_ID = datetime.now(UTC).strftime("run-%Y%m%dT%H%M%SZ")
+
+    # Remove anything a previous run left behind before measuring anything.
+    # A killed run orphans its planted evidence, which then becomes background
+    # noise for every scenario that follows - invisibly, because nothing errors.
+    import psycopg as _pg
+    with _pg.connect(settings.database_url, autocommit=True) as _c:
+        purged = fixtures.purge_orphans(_c)
+    if purged:
+        print(f"purged orphaned fixture rows from a previous run: {purged}")
 
     scenarios = load_scenarios(SCENARIO_DIR)
     if args.kind:
