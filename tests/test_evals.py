@@ -409,29 +409,45 @@ class TestScenarioFixtures:
         corpus. Leaked evidence for one service becomes background noise for
         every later scenario, and the numbers drift with nothing failing.
         """
+        import uuid as _uuid
+
         from evals import fixtures
         sc = self._scenario("single_service")
+        run_id = f"test-orphan-{_uuid.uuid4().hex[:8]}"
 
         baseline_logs = conn.execute("SELECT count(*) FROM log_entries").fetchone()[0]
         baseline_metrics = conn.execute("SELECT count(*) FROM metric_points").fetchone()[0]
 
-        # Simulate a run that dies before its cleanup: apply, then drop the
-        # in-process handle entirely.
-        state = fixtures.apply(conn, sc, run_id="test-orphan")
-        assert state.log_ids and state.metric_ids
-        tracked = conn.execute(
-            "SELECT count(*) FROM eval_fixture_rows WHERE run_id = 'test-orphan'"
-        ).fetchone()[0]
-        assert tracked == len(state.log_ids) + len(state.metric_ids) + len(state.deploy_ids)
-        del state
+        try:
+            # Simulate a run that dies before its cleanup: apply, then drop the
+            # in-process handle entirely.
+            state = fixtures.apply(conn, sc, run_id=run_id)
+            assert state.log_ids and state.metric_ids
+            tracked = conn.execute(
+                "SELECT count(*) FROM eval_fixture_rows WHERE run_id = %s", (run_id,)
+            ).fetchone()[0]
+            assert tracked == (len(state.log_ids) + len(state.metric_ids)
+                               + len(state.deploy_ids))
+            del state
 
-        # A later run purges what the dead one left, from the database alone.
-        purged = fixtures.purge_orphans(conn)
-        assert purged, "nothing was purged"
-        assert conn.execute("SELECT count(*) FROM log_entries").fetchone()[0] == baseline_logs
-        assert conn.execute(
-            "SELECT count(*) FROM metric_points").fetchone()[0] == baseline_metrics
-        assert conn.execute("SELECT count(*) FROM eval_fixture_rows").fetchone()[0] == 0
+            # A later run purges what the dead one left, from the database
+            # alone. Scoped to a different owner, so this cannot disturb a live
+            # eval - the unscoped form deleted a running eval's fixtures
+            # mid-scenario when the suite happened to run alongside one.
+            purged = fixtures.purge_orphans(conn, except_run_id="some-other-live-run")
+            assert purged, "nothing was purged"
+            assert conn.execute(
+                "SELECT count(*) FROM log_entries").fetchone()[0] == baseline_logs
+            assert conn.execute(
+                "SELECT count(*) FROM metric_points").fetchone()[0] == baseline_metrics
+            assert conn.execute(
+                "SELECT count(*) FROM eval_fixture_rows WHERE run_id = %s", (run_id,)
+            ).fetchone()[0] == 0
+        finally:
+            # The test plants real rows, so it must clean up even when it fails.
+            # Without this a failing run leaves its fixtures behind and the next
+            # run sees double - which is exactly how this test first failed.
+            fixtures.purge_orphans(conn, except_run_id="never-matches-anything")
 
     def test_clear_removes_its_own_tracking_rows(self, conn):
         from evals import fixtures

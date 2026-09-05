@@ -165,25 +165,40 @@ def _record(conn: psycopg.Connection, state: SeededState) -> None:
         )
 
 
-def purge_orphans(conn: psycopg.Connection) -> dict[str, int]:
-    """Remove any fixture rows left behind by a previous run.
+def purge_orphans(conn: psycopg.Connection, *,
+                  except_run_id: str | None = None) -> dict[str, int]:
+    """Remove fixture rows left behind by a run that is not this one.
 
     Called at harness startup. This is what makes the tracking table worth
     having: without it a killed run contaminates every subsequent one, and the
     contamination is invisible because nothing errors.
+
+    `except_run_id` is not optional in spirit. A purge that took every row
+    regardless of owner deletes the fixtures of a concurrently running eval
+    mid-scenario - which is exactly what happened when the test suite ran
+    alongside a live run and silently corrupted the scenario in flight. A run
+    purges what is not its own, and nothing else.
     """
     counts: dict[str, int] = {}
+    scope = " AND run_id <> %s" if except_run_id else ""
+
     with conn.cursor() as cur:
         for table, cast in (("log_entries", "::bigint"), ("metric_points", "::bigint"),
                             ("deploys", "")):
+            params = [table] + ([except_run_id] if except_run_id else [])
             cur.execute(
                 f"DELETE FROM {table} WHERE id IN ("
-                f"  SELECT target_id{cast} FROM eval_fixture_rows WHERE target_table = %s)",
-                (table,),
+                f"  SELECT target_id{cast} FROM eval_fixture_rows "
+                f"  WHERE target_table = %s{scope})",
+                params,
             )
             counts[table] = cur.rowcount
-        cur.execute("DELETE FROM eval_fixture_rows")
+        if except_run_id:
+            cur.execute("DELETE FROM eval_fixture_rows WHERE run_id <> %s", (except_run_id,))
+        else:
+            cur.execute("DELETE FROM eval_fixture_rows")
     return {k: v for k, v in counts.items() if v}
+
 
 
 def clear(conn: psycopg.Connection, state: SeededState) -> None:
