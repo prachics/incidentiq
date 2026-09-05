@@ -133,13 +133,30 @@ def apply(conn: psycopg.Connection, scenario: Scenario, *, seed: int = 0,
 
         # ── A triggering deploy, where the archetype implies one ─
         if arch.key in ("bad_deploy_regression", "memory_leak_oom", "config_drift"):
+            # Both the bad deploy AND the version it replaced. Planting only the
+            # bad one left the agent reading `previous_version: v3.11.4` from a
+            # deploy record for a version that had never been deployed, so
+            # `rollback_deploy` correctly refused the target it correctly chose.
+            # The agent was right and the fixture was incoherent.
+            bad_at = onset - timedelta(minutes=r.randint(4, 25))
+            prev_id = f"DEP-EVAL-{scenario.id}-prev"
+            cur.execute(
+                "INSERT INTO deploys (id, service, version, previous_version, deployed_at, "
+                "deployed_by, status, changelog) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (id) DO NOTHING",
+                (prev_id, service, "v3.11.4", "v3.11.3",
+                 bad_at - timedelta(days=r.randint(2, 9)), "eval-harness", "succeeded",
+                 "routine dependency bumps"),
+            )
+            state.deploy_ids.append(prev_id)
+
             deploy_id = f"DEP-EVAL-{scenario.id}"
             cur.execute(
                 "INSERT INTO deploys (id, service, version, previous_version, deployed_at, "
                 "deployed_by, status, changelog) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT (id) DO NOTHING",
-                (deploy_id, service, "v3.12.0", "v3.11.4",
-                 onset - timedelta(minutes=r.randint(4, 25)), "eval-harness", "succeeded",
+                (deploy_id, service, "v3.12.0", "v3.11.4", bad_at, "eval-harness",
+                 "succeeded",
                  "optimise response handling; add in-process cache for lookups"),
             )
             state.deploy_ids.append(deploy_id)
