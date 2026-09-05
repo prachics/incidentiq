@@ -692,10 +692,17 @@ Reasoning trace:
               f"{len(state.get('retrieved_docs') or [])} document(s) retrieved."
         )
 
+    # Do not overwrite a failure. `act` sets status='failed' when an approved
+    # action could not be executed, and unconditionally marking the
+    # investigation complete here hid that: the eval graded such runs as
+    # successes because the diagnosis was right and the status said complete,
+    # while the remediation had not actually run.
+    failed = state.get("status") == "failed" or state.get("failure_reason")
     return {
         "final_summary": summary,
-        "status": "complete",
-        "scratchpad": ["summarize: investigation closed"],
-        "events": [_event("summarize", started, ok=True)],
+        "status": "failed" if failed else "complete",
+        "scratchpad": ["summarize: investigation closed"
+                       + (" (an approved action failed to execute)" if failed else "")],
+        "events": [_event("summarize", started, ok=not failed)],
         **_tokens(state, resp),
     }

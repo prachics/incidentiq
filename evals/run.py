@@ -120,7 +120,12 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
         for attempts in by_tool.values()
     )
 
-    r.completed = state.get("status") in ("complete", "awaiting_approval")
+    # An investigation whose approved action failed to execute has not completed
+    # its task, however good the diagnosis was.
+    r.completed = (state.get("status") in ("complete", "awaiting_approval")
+                   and not state.get("failure_reason"))
+    if state.get("failure_reason"):
+        r.failure_note = f"the approved action failed to execute: {state['failure_reason']}"
 
     # ── Abstention scenarios ────────────────────────────────
     if scenario.should_abstain:

@@ -415,6 +415,11 @@ class TestScenarioFixtures:
         sc = self._scenario("single_service")
         run_id = f"test-orphan-{_uuid.uuid4().hex[:8]}"
 
+        # Establish a clean baseline first. Any fixture rows left by an earlier
+        # killed run would otherwise shift the counts this test compares, and
+        # the test would fail for a reason that has nothing to do with what it
+        # is checking.
+        fixtures.purge_orphans(conn, except_run_id="never-matches-anything")
         baseline_logs = conn.execute("SELECT count(*) FROM log_entries").fetchone()[0]
         baseline_metrics = conn.execute("SELECT count(*) FROM metric_points").fetchone()[0]
 
@@ -507,3 +512,24 @@ class TestGradingUsesTheWholeConclusion:
         ))
         assert not r.identified_cause
         assert not r.task_success
+
+
+class TestFailedActionGrading:
+    def test_a_failed_action_is_not_task_success(self):
+        """However good the diagnosis, an investigation whose approved action
+        did not execute has not completed its task."""
+        sc = Scenario(id="X", kind="approval_required", query="q",
+                      true_cause_service="user-service",
+                      root_cause_keywords=["memory", "leak"],
+                      acceptable_remediation_tools=["rollback_deploy"],
+                      requires_approval=True)
+        state = _state(
+            status="failed",
+            failure_reason="approved action failed: 'v3.11.4' was never deployed",
+            proposal=_proposal(root_cause="user-service memory leak from a recent deploy",
+                               remediation_tool="rollback_deploy"),
+        )
+        r = _grade(sc, state)
+        assert not r.completed
+        assert not r.task_success
+        assert "failed to execute" in r.failure_note

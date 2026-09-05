@@ -648,3 +648,35 @@ class TestProposeGuards:
         p = self._run('{"root_cause": "x", "confidence": 0.5, '
                       '"evidence_citations": ["INC-00315", "INC-99999"]}')
         assert p["evidence_citations"] == ["INC-00315"]
+
+
+class TestFailedActionIsNotSuccess:
+    """`summarize` must not overwrite a failed status.
+
+    Observed: an approved rollback_deploy failed because the target version had
+    never been deployed. `act` set status='failed' with a reason, and
+    `summarize` unconditionally set status='complete'. The eval then graded the
+    run as a success, because the diagnosis was right and the status said
+    complete, while the remediation had not run at all.
+    """
+
+    def test_summarize_preserves_a_failed_status(self):
+        from incidentiq.agent.nodes import NodeContext, summarize
+
+        ctx = NodeContext(conn=None, llm=StubProvider(
+            script=[LLMResponse(text='{"summary": "s", "uncertainties": []}')]))
+        state = initial_state("IQ-1", "q")
+        state["status"] = "failed"
+        state["failure_reason"] = "approved action failed: version never deployed"
+
+        out = summarize(state, ctx=ctx)
+        assert out["status"] == "failed", "a failed action was reported as complete"
+        assert "failed to execute" in out["scratchpad"][0]
+
+    def test_summarize_completes_a_healthy_run(self):
+        from incidentiq.agent.nodes import NodeContext, summarize
+
+        ctx = NodeContext(conn=None, llm=StubProvider(
+            script=[LLMResponse(text='{"summary": "s", "uncertainties": []}')]))
+        out = summarize(initial_state("IQ-1", "q"), ctx=ctx)
+        assert out["status"] == "complete"
