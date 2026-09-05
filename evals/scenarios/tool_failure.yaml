@@ -1,0 +1,221 @@
+- id: SC-TF-001
+  kind: tool_failure
+  query: payment-db looks unhealthy in the dashboard, can you look?
+  expected_service: payment-db
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in payment-db, so dead
+    tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - autovacuum
+  - unable
+  - largest
+  - tuples
+  - accumulated
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: payment-db
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Disk exhaustion on a datastore on payment-db, with 35% tool failure injection
+- id: SC-TF-002
+  kind: tool_failure
+  query: we're seeing failures on elasticsearch-cluster, no idea if it's us or downstream
+  expected_service: elasticsearch-cluster
+  expected_archetype: search_shard_unassigned
+  expected_root_cause: "Two primary shards on elasticsearch-cluster were unassigned after a node left\
+    \ the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had\
+    \ crossed the high watermark. Queries silently returned partial results rather than failing."
+  root_cause_keywords:
+  - primary
+  - shards
+  - unassigned
+  - cluster
+  - allocation
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: elasticsearch-cluster
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Search cluster shards unassigned on elasticsearch-cluster, with 35% tool failure injection
+- id: SC-TF-003
+  kind: tool_failure
+  query: alert fired on kafka-events. what's going on?
+  expected_service: kafka-events
+  expected_archetype: broker_partition_offline
+  expected_root_cause: A broker in the kafka-events cluster went offline and the partitions it led had
+    no in-sync replica to take over, because min.insync.replicas had been lowered during an earlier incident
+    and never restored. Those partitions became unavailable for writes.
+  root_cause_keywords:
+  - broker
+  - cluster
+  - offline
+  - partitions
+  - replica
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: kafka-events
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Broker partition offline on kafka-events, with 35% tool failure injection
+- id: SC-TF-004
+  kind: tool_failure
+  query: customers are complaining about carrier-adapter
+  expected_service: carrier-adapter
+  expected_archetype: cert_expiry
+  expected_root_cause: The TLS certificate used by carrier-adapter expired. Automated renewal had been
+    disabled during a migration eight months earlier and was never re-enabled, and the expiry monitor
+    was watching the load balancer's certificate rather than this one.
+  root_cause_keywords:
+  - certificate
+  - expired
+  - automated
+  - renewal
+  - disabled
+  expected_tools:
+  - get_service_logs
+  true_cause_service: carrier-adapter
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: TLS certificate expiry on carrier-adapter, with 35% tool failure injection
+- id: SC-TF-005
+  kind: tool_failure
+  query: feature-store degraded about an hour ago and hasn't recovered
+  expected_service: feature-store
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
+    dead tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - autovacuum
+  - unable
+  - largest
+  - tuples
+  - accumulated
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: feature-store
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Disk exhaustion on a datastore on feature-store, with 35% tool failure injection
+- id: SC-TF-006
+  kind: tool_failure
+  query: order-service degraded about an hour ago and hasn't recovered
+  expected_service: order-service
+  expected_archetype: thread_pool_saturation
+  expected_root_cause: The request thread pool in order-service was fully occupied by threads blocked
+    on a synchronous call, with no timeout. Because the threads were waiting rather than running, CPU
+    stayed low and every CPU-based alert stayed silent.
+  root_cause_keywords:
+  - thread
+  - occupied
+  - threads
+  - blocked
+  - synchronous
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: order-service
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Thread pool saturation on order-service, with 35% tool failure injection
+- id: SC-TF-007
+  kind: tool_failure
+  query: we're seeing failures on warehouse-sync, no idea if it's us or downstream
+  expected_service: warehouse-sync
+  expected_archetype: upstream_rate_limit
+  expected_root_cause: The provider's rate limit was exceeded during peak traffic. A retry loop with no
+    backoff turned each rate-limited request into four, so the limit was breached further the harder the
+    system tried to recover.
+  root_cause_keywords:
+  - exceeded
+  - during
+  - traffic
+  - backoff
+  - turned
+  expected_tools:
+  - get_service_logs
+  true_cause_service: warehouse-sync
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Third-party rate limit exceeded on warehouse-sync, with 35% tool failure injection
+- id: SC-TF-008
+  kind: tool_failure
+  query: something changed with feature-store and I can't work out what
+  expected_service: feature-store
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
+    dead tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - autovacuum
+  - unable
+  - largest
+  - tuples
+  - accumulated
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: feature-store
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Disk exhaustion on a datastore on feature-store, with 35% tool failure injection
+- id: SC-TF-009
+  kind: tool_failure
+  query: elasticsearch-cluster looks unhealthy in the dashboard, can you look?
+  expected_service: elasticsearch-cluster
+  expected_archetype: search_shard_unassigned
+  expected_root_cause: "Two primary shards on elasticsearch-cluster were unassigned after a node left\
+    \ the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had\
+    \ crossed the high watermark. Queries silently returned partial results rather than failing."
+  root_cause_keywords:
+  - primary
+  - shards
+  - unassigned
+  - cluster
+  - allocation
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: elasticsearch-cluster
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Search cluster shards unassigned on elasticsearch-cluster, with 35% tool failure injection
+- id: SC-TF-010
+  kind: tool_failure
+  query: something changed with payment-db and I can't work out what
+  expected_service: payment-db
+  expected_archetype: replica_lag
+  expected_root_cause: Replication lag on payment-db reached 240 seconds. A bulk backfill job saturated
+    the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
+    traffic load-balanced across replicas therefore returned data up to four minutes old.
+  root_cause_keywords:
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  expected_tools:
+  - get_service_logs
+  true_cause_service: payment-db
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Read replica lag serving stale data on payment-db, with 35% tool failure injection

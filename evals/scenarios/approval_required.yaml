@@ -1,0 +1,223 @@
+- id: SC-AP-001
+  kind: approval_required
+  query: getting paged for catalog-db, something's wrong
+  expected_service: catalog-db
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in catalog-db, so dead
+    tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - autovacuum
+  - unable
+  - largest
+  - tuples
+  - accumulated
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  requires_approval: true
+  true_cause_service: catalog-db
+  max_iterations: 8
+  approval_decision: approve
+  notes: scale_service on catalog-db; human will approve
+- id: SC-AP-002
+  kind: approval_required
+  query: getting paged for user-service, something's wrong
+  expected_service: user-service
+  expected_archetype: memory_leak_oom
+  expected_root_cause: A listener registered per request was never unregistered, so each request added
+    a permanently reachable object. Heap grew until the container limit was reached.
+  root_cause_keywords:
+  - listener
+  - registered
+  - unregistered
+  - permanently
+  - reachable
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  requires_approval: true
+  true_cause_service: user-service
+  max_iterations: 8
+  approval_decision: approve
+  notes: rollback_deploy on user-service; human will approve
+- id: SC-AP-003
+  kind: approval_required
+  query: customers are complaining about catalog-db
+  expected_service: catalog-db
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in catalog-db, so dead
+    tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - autovacuum
+  - unable
+  - largest
+  - tuples
+  - accumulated
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  requires_approval: true
+  true_cause_service: catalog-db
+  max_iterations: 8
+  approval_decision: reject
+  notes: scale_service on catalog-db; human will reject
+- id: SC-AP-004
+  kind: approval_required
+  query: inventory-service is throwing errors and I'm not sure why
+  expected_service: inventory-service
+  expected_archetype: bad_deploy_regression
+  expected_root_cause: Release v3.12.0 introduced an unguarded null dereference on a rarely-populated
+    optional field. Requests that happened to include it hit the exception path.
+  root_cause_keywords:
+  - release
+  - introduced
+  - unguarded
+  - dereference
+  - optional
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  requires_approval: true
+  true_cause_service: inventory-service
+  max_iterations: 8
+  approval_decision: approve
+  notes: rollback_deploy on inventory-service; human will approve
+- id: SC-AP-005
+  kind: approval_required
+  query: something changed with catalog-service and I can't work out what
+  expected_service: catalog-service
+  expected_archetype: config_drift
+  expected_root_cause: An environment variable was set in the deployment manifest but absent from the
+    canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
+  root_cause_keywords:
+  - environment
+  - variable
+  - deployment
+  - manifest
+  - absent
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  requires_approval: true
+  true_cause_service: catalog-service
+  max_iterations: 8
+  approval_decision: approve
+  notes: restart_service on catalog-service; human will approve
+- id: SC-AP-006
+  kind: approval_required
+  query: something changed with user-service and I can't work out what
+  expected_service: user-service
+  expected_archetype: db_pool_exhausted
+  expected_root_cause: Connection pool to user-db was exhausted. A slow query introduced earlier in the
+    week held connections open far longer than the pool timeout assumed, so under normal concurrency every
+    connection was checked out and new requests queued until they timed out.
+  root_cause_keywords:
+  - connection
+  - exhausted
+  - introduced
+  - earlier
+  - connections
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  requires_approval: true
+  true_cause_service: user-service
+  max_iterations: 8
+  approval_decision: reject
+  notes: restart_service on user-service; human will reject
+- id: SC-AP-007
+  kind: approval_required
+  query: getting paged for shipping-db, something's wrong
+  expected_service: shipping-db
+  expected_archetype: disk_full
+  expected_root_cause: The data volume on shipping-db reached 100%. WAL segments accumulated faster than
+    they were archived because the archive command had been failing silently for nine days, and nothing
+    alerted on archive failure.
+  root_cause_keywords:
+  - volume
+  - reached
+  - segments
+  - accumulated
+  - faster
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  requires_approval: true
+  true_cause_service: shipping-db
+  max_iterations: 8
+  approval_decision: approve
+  notes: scale_service on shipping-db; human will approve
+- id: SC-AP-008
+  kind: approval_required
+  query: getting paged for order-service, something's wrong
+  expected_service: order-service
+  expected_archetype: config_drift
+  expected_root_cause: An environment variable was set in the deployment manifest but absent from the
+    canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
+  root_cause_keywords:
+  - environment
+  - variable
+  - deployment
+  - manifest
+  - absent
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  requires_approval: true
+  true_cause_service: order-service
+  max_iterations: 8
+  approval_decision: approve
+  notes: restart_service on order-service; human will approve
+- id: SC-AP-009
+  kind: approval_required
+  query: recommendation-service looks unhealthy in the dashboard, can you look?
+  expected_service: recommendation-service
+  expected_archetype: db_pool_exhausted
+  expected_root_cause: All feature-store connections were checked out and never returned. A code path
+    added in the previous release failed to close its connection on the error branch, so each failed request
+    permanently leaked one connection from the pool.
+  root_cause_keywords:
+  - connections
+  - checked
+  - returned
+  - previous
+  - release
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - restart_service
+  requires_approval: true
+  true_cause_service: recommendation-service
+  max_iterations: 8
+  approval_decision: reject
+  notes: restart_service on recommendation-service; human will reject
+- id: SC-AP-010
+  kind: approval_required
+  query: alert fired on recommendation-service. what's going on?
+  expected_service: recommendation-service
+  expected_archetype: memory_leak_oom
+  expected_root_cause: A listener registered per request was never unregistered, so each request added
+    a permanently reachable object. Heap grew until the container limit was reached.
+  root_cause_keywords:
+  - listener
+  - registered
+  - unregistered
+  - permanently
+  - reachable
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  requires_approval: true
+  true_cause_service: recommendation-service
+  max_iterations: 8
+  approval_decision: approve
+  notes: rollback_deploy on recommendation-service; human will approve

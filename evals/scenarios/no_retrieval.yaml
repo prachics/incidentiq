@@ -1,0 +1,120 @@
+- id: SC-NR-001
+  kind: no_retrieval
+  query: SSO login through the corporate IdP is failing for the finance team
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-002
+  kind: no_retrieval
+  query: our nightly data warehouse export produced no rows
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-003
+  kind: no_retrieval
+  query: the analytics dashboard shows different numbers than the database
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-004
+  kind: no_retrieval
+  query: someone deleted a Slack channel with incident history in it
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-005
+  kind: no_retrieval
+  query: employee laptops are failing MDM compliance checks
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-006
+  kind: no_retrieval
+  query: our Salesforce integration stopped syncing overnight
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-007
+  kind: no_retrieval
+  query: the internal wiki is returning 404 for everything
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-008
+  kind: no_retrieval
+  query: the mobile app is crashing on Android 14 only
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-009
+  kind: no_retrieval
+  query: the VPN concentrator is dropping sessions every few minutes
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-010
+  kind: no_retrieval
+  query: customers report the marketing site is showing an old price
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-011
+  kind: no_retrieval
+  query: our vendor invoicing portal is rejecting purchase orders
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-012
+  kind: no_retrieval
+  query: the conference room booking system double-books rooms
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-013
+  kind: no_retrieval
+  query: the office wifi keeps dropping, is that related to our services?
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-014
+  kind: no_retrieval
+  query: the build agents are running out of disk on CI
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
+- id: SC-NR-015
+  kind: no_retrieval
+  query: our status page provider had an outage yesterday
+  expected_tools:
+  - search_similar_incidents
+  should_abstain: true
+  max_iterations: 4
+  notes: nothing relevant exists; the agent must say so rather than fabricate
