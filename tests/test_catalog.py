@@ -96,3 +96,62 @@ class TestArchetypes:
                 continue
             all_text = " ".join(arch.symptoms + arch.root_cause + arch.resolution)
             assert "{dep}" in all_text, f"{arch.key} sets needs_dep but never uses it"
+
+
+class TestRemediationMapping:
+    """An archetype's remediation tool must match what its resolution describes.
+
+    This was wrong for three archetypes and the eval inherited the error:
+    `disk_full`, `search_shard_unassigned` and `cache_node_eviction` all mapped
+    to `scale_service`, which changes replica count. Their resolutions are
+    "cleared archived WAL segments", "freed disk on the remaining nodes" and
+    "raised maxmemory" - none of which more replicas would achieve.
+
+    The agent noticed before the tests did. Asked about disk exhaustion it
+    described increasing disk capacity and proposed no tool, and was graded
+    wrong for it.
+    """
+
+    def test_scale_service_only_where_the_fix_is_scaling(self):
+        for arch in A.ARCHETYPES:
+            if arch.remediation_tool != "scale_service":
+                continue
+            resolutions = " ".join(arch.resolution).lower()
+            assert "scal" in resolutions, (
+                f"{arch.key} proposes scale_service, but its resolution never mentions "
+                f"scaling: {arch.resolution[0][:90]}"
+            )
+
+    def test_restart_service_only_where_the_fix_is_restarting(self):
+        for arch in A.ARCHETYPES:
+            if arch.remediation_tool != "restart_service":
+                continue
+            resolutions = " ".join(arch.resolution).lower()
+            assert any(w in resolutions for w in ("restart", "restored")), (
+                f"{arch.key} proposes restart_service but its resolution does not "
+                f"describe restarting: {arch.resolution[0][:90]}"
+            )
+
+    def test_rollback_only_where_the_fix_is_rolling_back(self):
+        for arch in A.ARCHETYPES:
+            if arch.remediation_tool != "rollback_deploy":
+                continue
+            resolutions = " ".join(arch.resolution).lower()
+            assert "roll" in resolutions, (
+                f"{arch.key} proposes rollback_deploy but its resolution does not "
+                f"describe a rollback: {arch.resolution[0][:90]}"
+            )
+
+    def test_every_remediation_tool_is_a_real_write_tool(self):
+        valid = {"restart_service", "scale_service", "rollback_deploy", None}
+        for arch in A.ARCHETYPES:
+            assert arch.remediation_tool in valid, (
+                f"{arch.key} names {arch.remediation_tool!r}, which is not a write tool"
+            )
+
+    def test_some_archetypes_have_no_applicable_tool(self):
+        """The tool surface is fixed at three actions, so some failures have no
+        automated remediation. An eval that assumed otherwise would penalise the
+        agent for correctly saying so."""
+        without = [a.key for a in A.ARCHETYPES if not a.remediation_tool]
+        assert without, "every archetype has a tool - suspicious, check the mappings"

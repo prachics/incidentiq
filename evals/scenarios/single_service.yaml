@@ -117,8 +117,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: search-service
   max_iterations: 6
   notes: Search cluster shards unassigned on search-service
@@ -238,8 +236,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: search-service
   max_iterations: 6
   notes: Search cluster shards unassigned on search-service
@@ -454,8 +450,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: payment-db
   max_iterations: 6
   notes: Disk exhaustion on a datastore on payment-db
@@ -486,8 +480,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: shipping-db
   max_iterations: 6
   notes: Disk exhaustion on a datastore on shipping-db
@@ -676,8 +668,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: elasticsearch-cluster
   max_iterations: 6
   notes: Search cluster shards unassigned on elasticsearch-cluster
@@ -899,8 +889,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: redis-sessions
   max_iterations: 6
   notes: Cache node evicting under memory pressure on redis-sessions
@@ -1026,8 +1014,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: user-db
   max_iterations: 6
   notes: Disk exhaustion on a datastore on user-db
@@ -1087,8 +1073,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: redis-cart
   max_iterations: 6
   notes: Cache node evicting under memory pressure on redis-cart
@@ -1215,8 +1199,6 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
   true_cause_service: redis-cart
   max_iterations: 6
   notes: Cache node evicting under memory pressure on redis-cart

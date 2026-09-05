@@ -278,7 +278,13 @@ ARCHETYPES: tuple[Archetype, ...] = (
         metric="disk_usage_pct",
         metric_spike=1.4,
         tags=("database", "disk", "wal", "capacity"),
-        remediation_tool="scale_service",
+                # No available write tool addresses this. scale_service changes
+        # replica count, which does nothing for a full disk or an
+        # exhausted memory limit - the fix is reclaiming space, and the
+        # tool surface is fixed at restart / scale / rollback. The
+        # correct agent behaviour is to diagnose it and say no automated
+        # remediation applies.
+        remediation_tool=None,
     ),
     Archetype(
         key="replica_lag",
@@ -528,7 +534,13 @@ ARCHETYPES: tuple[Archetype, ...] = (
         metric="unassigned_shards",
         metric_spike=2.0,
         tags=("search", "elasticsearch", "shards", "capacity"),
-        remediation_tool="scale_service",
+                # No available write tool addresses this. scale_service changes
+        # replica count, which does nothing for a full disk or an
+        # exhausted memory limit - the fix is reclaiming space, and the
+        # tool surface is fixed at restart / scale / rollback. The
+        # correct agent behaviour is to diagnose it and say no automated
+        # remediation applies.
+        remediation_tool=None,
     ),
     Archetype(
         key="traffic_surge",
@@ -597,7 +609,13 @@ ARCHETYPES: tuple[Archetype, ...] = (
         metric="cache_hit_rate",
         metric_spike=0.35,
         tags=("cache", "redis", "eviction", "memory"),
-        remediation_tool="scale_service",
+                # No available write tool addresses this. scale_service changes
+        # replica count, which does nothing for a full disk or an
+        # exhausted memory limit - the fix is reclaiming space, and the
+        # tool surface is fixed at restart / scale / rollback. The
+        # correct agent behaviour is to diagnose it and say no automated
+        # remediation applies.
+        remediation_tool=None,
     ),
     Archetype(
         key="broker_partition_offline",

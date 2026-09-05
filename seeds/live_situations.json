@@ -44,7 +44,7 @@
       "metric": "unassigned_shards",
       "expected_root_cause": "Two primary shards on search-service were unassigned after a node left the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had crossed the high watermark. Queries silently returned partial results rather than failing.",
       "acceptable_remediation": "Paused the rolling restart until green, then added a health gate between nodes.",
-      "remediation_tool": "scale_service",
+      "remediation_tool": null,
       "user_query": "search-service is throwing errors and I'm not sure why. Started maybe an hour ago.",
       "cascade_visible_in": [
         "api-gateway",
@@ -184,7 +184,7 @@
       "metric": "disk_usage_pct",
       "expected_root_cause": "Autovacuum had been unable to keep up on the largest table in order-db, so dead tuples accumulated until the volume filled.",
       "acceptable_remediation": "Ran a manual vacuum full on the affected table during a maintenance window, expanded the volume, and tuned autovacuum thresholds for the table's write rate.",
-      "remediation_tool": "scale_service",
+      "remediation_tool": null,
       "user_query": "order-db looks unhealthy in the dashboard but I can't tell what changed",
       "cascade_visible_in": [
         "order-service",
