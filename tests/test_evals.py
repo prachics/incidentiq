@@ -585,3 +585,76 @@ class TestVictimDetection:
             root_cause="checkout-service is overloaded and should be restarted")))
         assert not r.task_success
         assert "victim" in r.failure_note
+
+
+class TestRunComparison:
+    """Comparing two runs is only meaningful if they saw the same work.
+
+    The tool reports mismatches rather than refusing outright - a caveated
+    comparison is sometimes what you want - but never silently.
+    """
+
+    @staticmethod
+    def _summary(**kw):
+        base = {
+            "model": "m", "provider": "p", "n_scenarios": 10,
+            "task_completion": 0.4, "tool_success_rate": 0.8,
+            "abstention_accuracy": 1.0, "grounded_response_rate": None,
+            "recovery_rate_under_injection": 0.5, "median_latency_s": 109.0,
+            "mean_input_tokens": 15829, "mean_output_tokens": 694,
+            "iteration_cap_override": 3,
+            "by_kind": {"cascading": {"n": 2, "task_completion": 0.0}},
+        }
+        base.update(kw)
+        return base
+
+    def test_reports_a_metric_improving(self):
+        from evals.compare import render
+        md = render(self._summary(task_completion=0.4),
+                    self._summary(task_completion=0.7), "before", "after")
+        assert "Task completion" in md
+        assert "better" in md
+
+    def test_reports_a_metric_regressing(self):
+        from evals.compare import render
+        md = render(self._summary(task_completion=0.7),
+                    self._summary(task_completion=0.4), "before", "after")
+        assert "worse" in md
+
+    def test_latency_increase_is_worse_not_better(self):
+        """Direction matters per metric: more completion is good, more latency
+        is not."""
+        from evals.compare import render
+        md = render(self._summary(median_latency_s=100.0),
+                    self._summary(median_latency_s=200.0), "a", "b")
+        row = next(line for line in md.splitlines() if "Median latency" in line)
+        assert "worse" in row
+
+    def test_different_iteration_caps_are_flagged(self):
+        """A capped run understates completion, so comparing across caps
+        measures the cap as much as the model."""
+        from evals.compare import render
+        md = render(self._summary(iteration_cap_override=3),
+                    self._summary(iteration_cap_override=8), "a", "b")
+        assert "not cleanly comparable" in md
+        assert "different iteration caps" in md
+
+    def test_different_scenario_counts_are_flagged(self):
+        from evals.compare import render
+        md = render(self._summary(n_scenarios=10), self._summary(n_scenarios=100), "a", "b")
+        assert "did not see the same work" in md
+
+    def test_identical_runs_are_not_flagged(self):
+        from evals.compare import render
+        md = render(self._summary(), self._summary(), "a", "b")
+        assert "not cleanly comparable" not in md
+
+    def test_failure_modes_are_compared(self):
+        """A change that trades one failure mode for another is not an
+        improvement, even when the totals look better."""
+        from evals.compare import render_failures
+        md = render_failures({"proposed None": 2, "abstained wrongly": 2},
+                             {"proposed None": 0, "blamed the victim": 3},
+                             "before", "after")
+        assert "proposed None" in md and "blamed the victim" in md
+        assert "| 2 | 0 |" in md

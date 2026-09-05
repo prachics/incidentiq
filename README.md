@@ -111,6 +111,21 @@ python -m evals.run                  # the full 100-scenario suite
 Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env` to run against
 Claude instead. The provider interface is the only thing that changes.
 
+To compare two runs — a local model against a frontier one, or before and after
+a change:
+
+```bash
+python -m evals.run --provider ollama    --model qwen2.5:14b   # writes run_A.json
+python -m evals.run --provider anthropic --model claude-sonnet-5
+
+python -m evals.compare evals/results/run_A.json evals/results/run_B.json \
+    --label-a "qwen2.5:14b" --label-b "Claude"
+```
+
+`compare` reports which failure *modes* moved, not just the headline number — a
+change that trades one failure mode for another is not an improvement — and
+refuses to compare quietly across different scenario counts or iteration caps.
+
 That is a working, fully-seeded system with no API key required — the default
 configuration uses local embeddings and a local LLM.
 
