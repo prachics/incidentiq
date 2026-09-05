@@ -533,3 +533,55 @@ class TestFailedActionGrading:
         assert not r.completed
         assert not r.task_success
         assert "failed to execute" in r.failure_note
+
+
+class TestVictimDetection:
+    """Mentioning a service is not diagnosing it.
+
+    Observed: expected replica_lag on order-db with order-service as a victim.
+    The agent concluded "thread pool saturation in the order-service" and
+    restarted order-service - textbook victim-blaming. It was graded "not the
+    failure mode" instead, because the prose said "involving the order-db" in
+    passing and the substring check credited that as identifying the cause.
+    """
+
+    def test_acting_on_the_victim_is_named_as_such(self):
+        sc = Scenario(id="X", kind="cascading", query="q",
+                      true_cause_service="order-db",
+                      victim_services=["order-service", "api-gateway"],
+                      root_cause_keywords=["replication", "lag"],
+                      acceptable_remediation_tools=["restart_service"])
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause="thread pool saturation in order-service, involving the order-db",
+            remediation_tool="restart_service",
+            remediation_arguments={"service": "order-service"},
+        )))
+        assert not r.task_success
+        assert not r.identified_cause, "a passing mention was credited as a diagnosis"
+        assert "acted on the victim" in r.failure_note
+
+    def test_acting_on_the_real_cause_is_not_flagged(self):
+        sc = Scenario(id="X", kind="cascading", query="q",
+                      true_cause_service="order-db",
+                      victim_services=["order-service"],
+                      root_cause_keywords=["replication", "lag"],
+                      acceptable_remediation_tools=["restart_service"])
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause="replication lag on order-db made replicas serve stale data",
+            remediation_tool="restart_service",
+            remediation_arguments={"service": "order-db"},
+        )))
+        assert r.identified_cause
+        assert r.task_success
+
+    def test_no_remediation_target_falls_back_to_the_prose_check(self):
+        """An agent that proposes nothing can still be caught blaming the
+        victim in its reasoning."""
+        sc = Scenario(id="X", kind="cascading", query="q",
+                      true_cause_service="payment-db",
+                      victim_services=["checkout-service"],
+                      root_cause_keywords=["replication"])
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause="checkout-service is overloaded and should be restarted")))
+        assert not r.task_success
+        assert "victim" in r.failure_note

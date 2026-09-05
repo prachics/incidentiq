@@ -157,11 +157,25 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
     cause_service = (scenario.true_cause_service or scenario.expected_service or "").lower()
     r.identified_cause = bool(cause_service) and cause_service in text
 
-    # For cascading scenarios, blaming the victim is a specific, common, and
-    # wrong answer. Call it out rather than scoring it as a near miss.
-    if scenario.kind == "cascading" and not r.identified_cause:
-        if any(v.lower() in text for v in scenario.victim_services):
-            r.failure_note = "blamed the victim service instead of the downstream cause"
+    # Blaming the victim is the characteristic wrong answer for a cascading
+    # scenario, and the pattern the suite exists to detect - so it is named
+    # rather than folded into a generic miss.
+    #
+    # The signal is what the agent proposes to ACT on, not what its prose
+    # mentions. An agent that restarted order-service while the cause was
+    # replica lag on order-db was credited with identifying the cause, because
+    # it had written "involving the order-db" in passing. Mentioning a service
+    # is not diagnosing it.
+    target = (proposal.get("remediation_arguments") or {}).get("service")
+    victims = {v.lower() for v in scenario.victim_services}
+    acted_on_victim = bool(target) and target.lower() in victims \
+        and target.lower() != cause_service
+    if scenario.kind == "cascading" and (acted_on_victim or not r.identified_cause):
+        if acted_on_victim or any(v.lower() in text for v in scenario.victim_services):
+            r.identified_cause = False if acted_on_victim else r.identified_cause
+            r.failure_note = ("acted on the victim service instead of the downstream cause"
+                              if acted_on_victim else
+                              "blamed the victim service instead of the downstream cause")
 
     # ── Did it describe the right mechanism? ────────────────
     # Keywords are pooled across every narrative variant of the archetype (see
@@ -326,6 +340,11 @@ def aggregate(results: list[ScenarioResult], settings: Settings) -> dict[str, An
         # values as "p95", which understates the tail exactly when the sample is
         # small enough for the tail to matter most.
         "p95_latency_s": round(latencies[min(n - 1, math.ceil(0.95 * n) - 1)], 1),
+        # A host suspend inflates whichever scenario was in flight, and the
+        # result looks like a slow scenario rather than a stopped clock.
+        "latency_outlier_ratio": round(
+            max(latencies) / statistics.median(latencies), 1
+        ) if statistics.median(latencies) else 0,
         "mean_input_tokens": round(statistics.mean(r.input_tokens for r in results)),
         "mean_output_tokens": round(statistics.mean(r.output_tokens for r in results)),
         "abstention_accuracy": (
@@ -408,6 +427,13 @@ def write_report(summary: dict, results: list[ScenarioResult], failures: dict,
                   "| Failure mode | Count |", "|---|---|"]
         for note, count in failures.items():
             lines.append(f"| {note} | {count} |")
+
+    if summary.get("latency_outlier_ratio", 0) > 5:
+        lines += ["", "> **Latency figures are unreliable for this run.** The slowest "
+                  f"scenario took {summary['latency_outlier_ratio']:.0f}x the median, "
+                  "which is the signature of the host suspending mid-run rather than of "
+                  "a slow scenario. Task completion and tool success are unaffected; "
+                  "the latency columns should not be quoted."]
 
     if summary.get("iteration_cap_override"):
         lines += ["", "> **Reduced iteration budget.** Every scenario was capped at "
