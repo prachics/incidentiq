@@ -1,4 +1,6 @@
-# Multi-stage so the runtime image does not carry build tooling.
+# Build context is the repository root (see docker-compose.yml), because
+# pyproject.toml lives there and the package lives under api/. Building from
+# ./api would leave the dependency manifest outside the context.
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
@@ -6,17 +8,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
-COPY incidentiq ./incidentiq
+COPY api/incidentiq ./api/incidentiq
 RUN pip install --no-cache-dir --prefix=/install .
 
 FROM python:3.12-slim
 WORKDIR /app
 
 COPY --from=builder /install /usr/local
-COPY incidentiq ./incidentiq
+COPY api/incidentiq ./incidentiq
 
-# Pre-download the embedding model at build time so the first request is not
-# slowed by a model download. Cached in the model_cache volume thereafter.
+# Cached in the model_cache volume so the embedding model is downloaded once.
 ENV HF_HOME=/root/.cache/huggingface
 ENV PYTHONUNBUFFERED=1
 
