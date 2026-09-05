@@ -134,6 +134,11 @@ is missing in `abstention_reason`, and leave `remediation_tool` null. This is
 the correct answer when retrieval returned nothing relevant or the tools were
 inconclusive. Do not stretch an unrelated incident into an explanation.
 
+If you are NOT abstaining, you must either name one remediation tool or state
+in `remediation` why none of the available tools addresses this cause. A
+confident diagnosis with no action and no explanation leaves the on-call
+engineer exactly where they started.
+
 Available remediation tools (all require human approval; choose at most one):
 - restart_service(service, instance_id?, reason) - clears a saturated pool or a
   deadlock. Useless when the service is waiting on a broken dependency.

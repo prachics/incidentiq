@@ -138,10 +138,21 @@ and a markdown summary in `evals/results/`.
 | Retrieval Hit@5 | — | 0.917 | ✅ Phase 2 |
 | Retrieval MRR | — | 0.917 | ✅ Phase 2 |
 | Retrieval median latency | — | 28.7 ms | ✅ Phase 2 |
-| Task completion | ≥ 90% | — | Phase 3 |
-| Grounded response rate | ≥ 90% | — | Phase 3 |
-| Tool execution success | ≥ 95% | — | Phase 3 |
-| Cost per investigation | reported | — | Phase 3 |
+| Task completion | ≥ 90% | **40.0%** | ⚠️ Phase 3 |
+| Abstention accuracy | — | **100%** | ✅ Phase 3 |
+| Tool execution success | ≥ 95% | 80.0% | ⚠️ Phase 3 |
+| Grounded response rate | ≥ 90% | not scored | Phase 3 |
+| Cost per investigation | reported | 15.8k in / 0.7k out | ✅ Phase 3 |
+
+Agent figures are from a **10-scenario stratified sample against a local 14B
+model (`qwen2.5:14b`) at a 3-iteration cap**, not the full suite at full budget.
+They are reported as measured rather than withheld until they look better.
+
+**Four of the six failures are under-commitment, not wrong answers** — the agent
+had the evidence and declined to act on it. That is the direct cost of prompts
+tuned to abstain rather than fabricate, which is also why abstention scored
+100%. The tradeoff is now measured instead of assumed. Full failure taxonomy in
+[`docs/EVALS.md`](docs/EVALS.md).
 
 Retrieval configuration: hybrid (pgvector cosine + Postgres FTS, weighted RRF),
 service pre-filter on, `BAAI/bge-small-en-v1.5` local embeddings, chunk 320 /

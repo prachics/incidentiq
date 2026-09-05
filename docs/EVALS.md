@@ -353,6 +353,105 @@ The pattern in all four: **the measurement was narrower than the thing being
 measured.** Each was found by reading a single failing scenario end to end, not
 by looking at an aggregate.
 
+## Results — 2026-09-05
+
+`qwen2.5:14b` via Ollama, 10 scenarios (stratified, 2 per kind), iteration cap
+3, groundedness not scored.
+
+| Metric | Target | Result |
+|---|---|---|
+| Task completion | ≥ 90% | **40.0%** |
+| Tool execution success | ≥ 95% | 80.0% (30 attempts) |
+| Abstention accuracy | — | **100%** (2/2) |
+| Approval flow exercised | — | 50% |
+| Recovery under injection | — | 50% |
+| Median latency | — | 109.0s |
+| Mean tokens per investigation | — | 15,829 in / 694 out |
+
+| Kind | n | Completion |
+|---|---|---|
+| no_retrieval | 2 | **100%** |
+| approval_required | 2 | 50% |
+| single_service | 2 | 50% |
+| cascading | 2 | 0% |
+| tool_failure | 2 | 0% |
+
+**Latency is not quotable from this run.** The host suspended mid-run, so p95
+(416.3s) is a stopped clock rather than a slow scenario. The harness now flags
+this automatically when the slowest scenario exceeds 5x the median.
+
+## What the failures have in common
+
+| Failure mode | Count |
+|---|---|
+| Proposed no remediation tool | 2 |
+| Abstained on a scenario that had a discoverable cause | 2 |
+| Approved action failed: hallucinated a version that was never deployed | 1 |
+| Named the service but not the failure mode | 1 |
+
+**Four of six failures are under-commitment, not wrong answers.** In every one
+of those four the agent had the evidence and declined to act on it. The clearest
+case: asked about a degraded `notification-service`, it called three tools
+successfully, wrote *"logs indicate ... CPU throttling"* - which is precisely the
+`traffic_surge` signature - and then concluded it had *"insufficient evidence to
+determine"* the cause.
+
+This is the direct cost of a deliberate design choice. The prompts push hard
+toward abstaining rather than fabricating, which is why both `no_retrieval`
+scenarios passed. The same bias makes the agent under-commit when evidence *is*
+present, and a reduced iteration budget sharpens it: with fewer turns the agent
+reaches a diagnosis and stops before it feels entitled to recommend an action.
+
+The tradeoff is now measured rather than assumed: **100% on abstention, and two
+false abstentions on solvable cases.** A system tuned the other way would score
+better here and would fabricate on the fifteen scenarios where fabricating is
+the worst possible behaviour.
+
+Applied in response, and not yet re-measured: the `propose` prompt now requires
+either a named remediation tool or an explicit statement of why none of the
+available tools addresses the cause. "A confident diagnosis with no action and
+no explanation leaves the on-call engineer exactly where they started."
+
+## The one that is not under-commitment
+
+`SC-CA-001`: the agent proposed rolling `inventory-service` back to `v1.6.9`.
+That version has never existed - the known versions are `v1.23.1` through
+`v1.23.4`. It hallucinated a version number.
+
+`rollback_deploy` validates its target against real deploy history and refused:
+
+```
+act: execution failed - 'v1.6.9' was never deployed to inventory-service.
+     Known versions: v1.23.4, v1.23.3, v1.23.2, v1.23.1
+```
+
+The refusal happened at the tool layer, *after* a human had approved the action.
+An on-call engineer scanning an approval request at 3am is not reliably going to
+check a version string against deploy history. This is the argument for
+validating tool arguments against real state rather than trusting either the
+model or the approver - and it is a better answer to "what stops the agent doing
+something wrong" than "a human looks at it".
+
+## Honest reading of 40%
+
+Against a 90% target this is a large miss, and the caveats are real but do not
+close the gap on their own:
+
+- **A 14B local model.** The comparison against a frontier model is the reason
+  the provider interface exists, and has not been run - that costs money and is
+  the next measurement, not an excuse for this one.
+- **A 3-iteration cap** against scenario budgets of 4-8, which the failure
+  taxonomy shows is not incidental: under-commitment is exactly what a truncated
+  investigation produces.
+- **Ten scenarios**, so one scenario is worth 10 points and the by-kind rows are
+  n=2 each. These numbers indicate direction, not precision.
+
+What the run does establish, independent of the score: the graph completes,
+tools execute and retry, the approval interrupt fires and resumes, a hallucinated
+argument is refused at the tool layer, failed actions are reported as failures,
+and abstention works. Every one of those was verified by reading a specific
+scenario end to end.
+
 ---
 
 ## Results over time
@@ -362,3 +461,4 @@ Populated from `evals/results/`.
 | Date | Phase | Recall@5 | Hit@5 | MRR | Completion | Grounded | Tool success |
 |---|---|---|---|---|---|---|---|
 | 2026-09-04 | 2 | 0.800 | 0.917 | 0.917 | — | — | — |
+| 2026-09-05 | 3 | — | — | — | 40.0% | not scored | 80.0% |
