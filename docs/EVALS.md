@@ -275,6 +275,86 @@ where HNSW's approximation starts to bite.
 
 ---
 
+# Phase 3 results — the agent
+
+Reproduce with:
+
+```bash
+python -m evals.run                       # the full 100-scenario suite
+python -m evals.run --sample 2 --max-iterations 3 --no-judge   # a dev subset
+```
+
+## How to read these numbers
+
+Four things about this run, stated before the table rather than after it.
+
+**The iteration budget was capped.** Local inference runs at ~24 tok/s, so a
+full-budget scenario is 15-20 LLM calls and several minutes; the whole suite is
+an overnight job. Capped runs are reported as capped, and the harness writes the
+cap into the results file so a capped number can never be mistaken for a full
+one. **Task completion under a cap is a lower bound**, and not for a subtle
+reason: with fewer iterations the agent frequently reaches a correct diagnosis
+and stops there without proposing a remediation, which the grader counts as a
+miss. That is the right grading — "did it reach a correct remediation" is the
+metric — but it means the gap between capped and uncapped is larger than the
+missing evidence alone would suggest.
+
+**Groundedness was not scored in this run.** The judge roughly doubles wall
+clock. A groundedness number also needs a calibration kappa beside it to be
+interpretable, and that has not been run either. Reporting the number without
+it would be worse than omitting it.
+
+**The corpus was verified clean beforehand** — 9,927 log rows, 89,856 metric
+rows, zero orphaned fixture rows — because earlier runs leaked planted evidence
+that would have quietly inflated later scenarios.
+
+**Every scenario got the evidence its failure would leave.** Without that, most
+scenarios were unanswerable from tool output and the suite was measuring
+something other than what it claimed.
+
+## What the eval measured before it was trustworthy
+
+Four measurement bugs were found by running the harness and reading individual
+results rather than the aggregate. All four would have produced numbers that
+looked plausible.
+
+**1. Grading against one narrative variant.** Each archetype carries two
+root-cause stories and the corpus contains both. A scenario drew one and graded
+against that sentence alone, so an agent that diagnosed `disk_full` correctly
+and described the other variant scored 0 of 5 keywords. Ground truth is now the
+archetype — which is determinate — with keywords pooled across variants. The
+same answer scores 6.
+
+**2. Scenarios with no evidence to find.** The corpus plants error signals for
+12 "live situations"; the generator produces 100 scenarios across every service
+and archetype. **88 had no trace anywhere the diagnostic tools could look.** The
+symptom was an agent doing the right thing and being marked wrong — asked about
+a memory leak it found no ERROR logs, reasoned the service was probably waiting
+on a dependency, and said so while noting it had no evidence. The eval was
+measuring whether it could guess an archetype from retrieval alone.
+`evals/fixtures.py` now plants the evidence and removes it afterwards.
+
+**3. Fixture cleanup that did not survive an unclean exit.** Row ids lived in a
+Python object, so `kill -9` orphaned them — 137 log rows, 1 deploy, ~153 metric
+rows, the last with no marker distinguishing them from the base corpus. Leaked
+evidence becomes background noise for every later scenario and the numbers drift
+with nothing failing. Cleanup state now lives in the database and is purged at
+startup, scoped so a run never deletes a concurrent run's fixtures.
+
+**4. Grading a narrower slice than the agent's answer.** `identified_cause`
+searched `root_cause` + `remediation` only. An agent that concluded "the root
+cause of the catalog-db incident is disk exhaustion, confidence 0.9" — naming
+the service in its summary and remediation arguments but not inside the
+`root_cause` string — was graded as not having named the service. Grading now
+spans the whole conclusion, with a test asserting that naming the *wrong*
+service everywhere still fails.
+
+The pattern in all four: **the measurement was narrower than the thing being
+measured.** Each was found by reading a single failing scenario end to end, not
+by looking at an aggregate.
+
+---
+
 ## Results over time
 
 Populated from `evals/results/`.
