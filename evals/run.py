@@ -452,7 +452,7 @@ def main() -> int:
     # noise for every scenario that follows - invisibly, because nothing errors.
     import psycopg as _pg
     with _pg.connect(settings.database_url, autocommit=True) as _c:
-        purged = fixtures.purge_orphans(_c)
+        purged = fixtures.purge_orphans(_c, except_run_id=RUN_ID)
     if purged:
         print(f"purged orphaned fixture rows from a previous run: {purged}")
 
