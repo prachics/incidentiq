@@ -50,16 +50,26 @@ METRIC_INTERVAL_MIN = 5
 
 @dataclass
 class SeededState:
-    """Row ids written for one scenario, so they can be removed exactly."""
+    """Row ids written for one scenario, so they can be removed exactly.
+
+    Mirrored into `eval_fixture_rows` as they are written. Holding them only
+    here was enough until a process did not exit cleanly: a SIGKILL skips the
+    cleanup and orphans every row. Leaked evidence for one service silently
+    becomes background noise for every later scenario, and the numbers drift
+    without anything failing.
+    """
+    run_id: str = ""
+    scenario_id: str = ""
     log_ids: list[int] = field(default_factory=list)
     metric_ids: list[int] = field(default_factory=list)
     deploy_ids: list[str] = field(default_factory=list)
     onset: datetime | None = None
 
 
-def apply(conn: psycopg.Connection, scenario: Scenario, *, seed: int = 0) -> SeededState:
+def apply(conn: psycopg.Connection, scenario: Scenario, *, seed: int = 0,
+          run_id: str = "adhoc") -> SeededState:
     """Write the evidence this scenario's failure would actually leave."""
-    state = SeededState()
+    state = SeededState(run_id=run_id, scenario_id=scenario.id)
     if scenario.should_abstain or not scenario.expected_archetype:
         return state
 
@@ -134,7 +144,46 @@ def apply(conn: psycopg.Connection, scenario: Scenario, *, seed: int = 0) -> See
             )
             state.deploy_ids.append(deploy_id)
 
+    _record(conn, state)
     return state
+
+
+def _record(conn: psycopg.Connection, state: SeededState) -> None:
+    """Write the row ids to the database so cleanup survives an unclean exit."""
+    rows = (
+        [("log_entries", str(i)) for i in state.log_ids]
+        + [("metric_points", str(i)) for i in state.metric_ids]
+        + [("deploys", i) for i in state.deploy_ids]
+    )
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO eval_fixture_rows (run_id, scenario_id, target_table, target_id) "
+            "VALUES (%s,%s,%s,%s)",
+            [(state.run_id, state.scenario_id, t, i) for t, i in rows],
+        )
+
+
+def purge_orphans(conn: psycopg.Connection) -> dict[str, int]:
+    """Remove any fixture rows left behind by a previous run.
+
+    Called at harness startup. This is what makes the tracking table worth
+    having: without it a killed run contaminates every subsequent one, and the
+    contamination is invisible because nothing errors.
+    """
+    counts: dict[str, int] = {}
+    with conn.cursor() as cur:
+        for table, cast in (("log_entries", "::bigint"), ("metric_points", "::bigint"),
+                            ("deploys", "")):
+            cur.execute(
+                f"DELETE FROM {table} WHERE id IN ("
+                f"  SELECT target_id{cast} FROM eval_fixture_rows WHERE target_table = %s)",
+                (table,),
+            )
+            counts[table] = cur.rowcount
+        cur.execute("DELETE FROM eval_fixture_rows")
+    return {k: v for k, v in counts.items() if v}
 
 
 def clear(conn: psycopg.Connection, state: SeededState) -> None:
@@ -151,3 +200,7 @@ def clear(conn: psycopg.Connection, state: SeededState) -> None:
             cur.execute("DELETE FROM metric_points WHERE id = ANY(%s)", (state.metric_ids,))
         if state.deploy_ids:
             cur.execute("DELETE FROM deploys WHERE id = ANY(%s)", (state.deploy_ids,))
+        cur.execute(
+            "DELETE FROM eval_fixture_rows WHERE run_id = %s AND scenario_id = %s",
+            (state.run_id, state.scenario_id),
+        )
