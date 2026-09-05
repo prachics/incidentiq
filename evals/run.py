@@ -360,6 +360,21 @@ def write_report(summary: dict, results: list[ScenarioResult], failures: dict,
         for note, count in failures.items():
             lines.append(f"| {note} | {count} |")
 
+    if summary.get("iteration_cap_override"):
+        lines += ["", "> **Reduced iteration budget.** Every scenario was capped at "
+                  f"{summary['iteration_cap_override']} iterations rather than its own "
+                  "budget of 4-8. Task completion is therefore a lower bound, and this "
+                  "run is not comparable with an uncapped one."]
+
+    if summary.get("grounded_response_rate") is not None:
+        lines += ["", "> **The groundedness figure is uncalibrated.** It is one model's "
+                  "opinion of another model's output, and the two share failure modes. "
+                  "Raw agreement with a human is not enough either - a judge that "
+                  "answers \"supported\" unconditionally scores 90% agreement on a "
+                  "corpus that is 90% supported while carrying no information. Run "
+                  "`python -m evals.calibration` to produce a labelling sheet and a "
+                  "Cohen's kappa, and report that alongside this number."]
+
     md_path.write_text("\n".join(lines) + "\n")
     return json_path, md_path
 
