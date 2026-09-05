@@ -183,7 +183,8 @@ def _record(conn: psycopg.Connection, state: SeededState) -> None:
 
 
 def purge_orphans(conn: psycopg.Connection, *,
-                  except_run_id: str | None = None) -> dict[str, int]:
+                  except_run_id: str | None = None,
+                  only_run_id: str | None = None) -> dict[str, int]:
     """Remove fixture rows left behind by a run that is not this one.
 
     Called at harness startup. This is what makes the tracking table worth
@@ -196,13 +197,21 @@ def purge_orphans(conn: psycopg.Connection, *,
     alongside a live run and silently corrupted the scenario in flight. A run
     purges what is not its own, and nothing else.
     """
+    if except_run_id and only_run_id:
+        raise ValueError("pass except_run_id or only_run_id, not both")
+
     counts: dict[str, int] = {}
-    scope = " AND run_id <> %s" if except_run_id else ""
+    if only_run_id:
+        scope, scope_arg = " AND run_id = %s", only_run_id
+    elif except_run_id:
+        scope, scope_arg = " AND run_id <> %s", except_run_id
+    else:
+        scope, scope_arg = "", None
 
     with conn.cursor() as cur:
         for table, cast in (("log_entries", "::bigint"), ("metric_points", "::bigint"),
                             ("deploys", "")):
-            params = [table] + ([except_run_id] if except_run_id else [])
+            params = [table] + ([scope_arg] if scope_arg else [])
             cur.execute(
                 f"DELETE FROM {table} WHERE id IN ("
                 f"  SELECT target_id{cast} FROM eval_fixture_rows "
@@ -210,8 +219,8 @@ def purge_orphans(conn: psycopg.Connection, *,
                 params,
             )
             counts[table] = cur.rowcount
-        if except_run_id:
-            cur.execute("DELETE FROM eval_fixture_rows WHERE run_id <> %s", (except_run_id,))
+        if scope_arg:
+            cur.execute(f"DELETE FROM eval_fixture_rows WHERE TRUE{scope}", (scope_arg,))
         else:
             cur.execute("DELETE FROM eval_fixture_rows")
     return {k: v for k, v in counts.items() if v}

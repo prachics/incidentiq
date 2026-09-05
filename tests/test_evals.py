@@ -419,7 +419,7 @@ class TestScenarioFixtures:
         # killed run would otherwise shift the counts this test compares, and
         # the test would fail for a reason that has nothing to do with what it
         # is checking.
-        fixtures.purge_orphans(conn, except_run_id="never-matches-anything")
+        fixtures.purge_orphans(conn, only_run_id=run_id)
         baseline_logs = conn.execute("SELECT count(*) FROM log_entries").fetchone()[0]
         baseline_metrics = conn.execute("SELECT count(*) FROM metric_points").fetchone()[0]
 
@@ -439,7 +439,7 @@ class TestScenarioFixtures:
             # alone. Scoped to a different owner, so this cannot disturb a live
             # eval - the unscoped form deleted a running eval's fixtures
             # mid-scenario when the suite happened to run alongside one.
-            purged = fixtures.purge_orphans(conn, except_run_id="some-other-live-run")
+            purged = fixtures.purge_orphans(conn, only_run_id=run_id)
             assert purged, "nothing was purged"
             assert conn.execute(
                 "SELECT count(*) FROM log_entries").fetchone()[0] == baseline_logs
@@ -452,7 +452,7 @@ class TestScenarioFixtures:
             # The test plants real rows, so it must clean up even when it fails.
             # Without this a failing run leaves its fixtures behind and the next
             # run sees double - which is exactly how this test first failed.
-            fixtures.purge_orphans(conn, except_run_id="never-matches-anything")
+            fixtures.purge_orphans(conn, only_run_id=run_id)
 
     def test_clear_removes_its_own_tracking_rows(self, conn):
         from evals import fixtures
