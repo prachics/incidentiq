@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Env & secrets
+.env
+.env.local
+*.pem
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Data & artifacts
+*.db
+models_cache/
+evals/results/*.json
+evals/results/*.md
+!evals/results/.gitkeep
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
