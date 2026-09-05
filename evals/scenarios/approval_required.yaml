@@ -6,11 +6,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in catalog-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -28,11 +38,21 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
   - listener
   - registered
   - unregistered
   - permanently
-  - reachable
+  - memory
+  - restart
+  - leak
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -50,11 +70,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in catalog-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -73,10 +103,21 @@
     optional field. Requests that happened to include it hit the exception path.
   root_cause_keywords:
   - release
-  - introduced
-  - unguarded
-  - dereference
-  - optional
+  - changed
+  - response
+  - string
+  - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -94,11 +135,22 @@
   expected_root_cause: An environment variable was set in the deployment manifest but absent from the
     canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
   root_cause_keywords:
+  - config
+  - change
+  - applied
+  - replicas
+  - routed
+  - replica
+  - failed
+  - apparent
+  - randomness
+  - balancing
   - environment
   - variable
-  - deployment
-  - manifest
-  - absent
+  - config
+  - drift
+  - deploy
+  - consistency
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -122,6 +174,17 @@
   - introduced
   - earlier
   - connections
+  - longer
+  - timeout
+  - assumed
+  - normal
+  - concurrency
+  - checked
+  - queued
+  - database
+  - connection-pool
+  - timeout
+  - saturation
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -145,6 +208,16 @@
   - segments
   - accumulated
   - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -162,11 +235,22 @@
   expected_root_cause: An environment variable was set in the deployment manifest but absent from the
     canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
   root_cause_keywords:
+  - config
+  - change
+  - applied
+  - replicas
+  - routed
+  - replica
+  - failed
+  - apparent
+  - randomness
+  - balancing
   - environment
   - variable
-  - deployment
-  - manifest
-  - absent
+  - config
+  - drift
+  - deploy
+  - consistency
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -185,11 +269,22 @@
     added in the previous release failed to close its connection on the error branch, so each failed request
     permanently leaked one connection from the pool.
   root_cause_keywords:
+  - connection
+  - exhausted
+  - introduced
+  - earlier
   - connections
+  - longer
+  - timeout
+  - assumed
+  - normal
+  - concurrency
   - checked
-  - returned
-  - previous
-  - release
+  - queued
+  - database
+  - connection-pool
+  - timeout
+  - saturation
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -207,11 +302,21 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
   - listener
   - registered
   - unregistered
   - permanently
-  - reachable
+  - memory
+  - restart
+  - leak
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:

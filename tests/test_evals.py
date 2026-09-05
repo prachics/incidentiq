@@ -122,7 +122,8 @@ class TestGrading:
         r = _grade(sc, _state(proposal=_proposal(
             root_cause="checkout-service is unwell for unclear reasons")))
         assert not r.task_success
-        assert "mechanism" in r.failure_note
+        assert r.matched_keywords == 0
+        assert "failure mode" in r.failure_note
 
     def test_blaming_the_victim_is_called_out_specifically(self):
         """A cascading scenario's characteristic wrong answer. Reporting it as a
@@ -229,3 +230,75 @@ class TestAggregation:
         counts = failure_analysis(results)
         assert counts["did not name the causing service"] == 2
         assert sum(counts.values()) == 3   # the passing one is excluded
+
+
+class TestPercentiles:
+    def _settings(self):
+        from incidentiq.config import Settings
+        return Settings(llm_provider="stub")
+
+    def _results(self, latencies):
+        return [ScenarioResult(scenario_id=str(i), kind="x", query="q", latency_s=v)
+                for i, v in enumerate(latencies)]
+
+    def test_p95_on_a_small_sample_does_not_understate_the_tail(self):
+        """int(0.95*4)-1 picks the third of four values. With small samples the
+        tail is exactly what you are trying to see."""
+        s = aggregate(self._results([60.0, 95.0, 140.0, 180.0]), self._settings())
+        assert s["p95_latency_s"] == 180.0
+
+    def test_p95_on_a_full_run(self):
+        s = aggregate(self._results([float(i) for i in range(1, 101)]), self._settings())
+        assert s["p95_latency_s"] == 95.0
+
+    def test_p95_never_exceeds_the_maximum(self):
+        for n in range(1, 40):
+            s = aggregate(self._results([float(i) for i in range(n)]), self._settings())
+            assert s["p95_latency_s"] <= float(n - 1)
+
+    def test_single_scenario_p95_is_that_scenario(self):
+        s = aggregate(self._results([42.0]), self._settings())
+        assert s["p95_latency_s"] == 42.0 and s["median_latency_s"] == 42.0
+
+
+class TestArchetypeVariantGrading:
+    """Each archetype has two narratives for the same failure. Grading against
+    the one a scenario happened to draw scored a correct diagnosis at zero.
+
+    Observed: `disk_full` on catalog-db. The scenario drew "autovacuum could not
+    keep up and dead tuples filled the volume"; the agent diagnosed disk
+    exhaustion on the right service and described the other variant, "WAL
+    segments accumulated because archiving was failing". Both are in the corpus
+    and both are right. It matched 0 of 5 keywords.
+
+    Ground truth is now the archetype, which is determinate, rather than the
+    narrative, which is not.
+    """
+
+    def test_either_variant_of_an_archetype_is_accepted(self):
+        sc = next(s for s in load_scenarios(SCENARIO_DIR)
+                  if s.expected_archetype == "disk_full")
+        wal_variant = ("the data volume reached 100%, WAL segments accumulated because "
+                       "the archive command was failing")
+        vacuum_variant = ("autovacuum could not keep up on the largest table so dead "
+                          "tuples accumulated until the volume filled")
+        for text in (wal_variant, vacuum_variant):
+            hits = sum(1 for k in sc.root_cause_keywords if k in text.lower())
+            assert hits >= 2, f"only {hits} hits for a correct diagnosis: {text[:60]}"
+
+    def test_keywords_are_pooled_not_drawn_from_one_variant(self):
+        """The pool must be big enough to cover both narratives."""
+        for s in load_scenarios(SCENARIO_DIR):
+            if s.expected_archetype and s.root_cause_keywords:
+                assert len(s.root_cause_keywords) >= 6, (
+                    f"{s.id} has only {len(s.root_cause_keywords)} keywords - "
+                    "that looks like one variant rather than a pooled vocabulary"
+                )
+
+    def test_an_unrelated_answer_still_fails(self):
+        """The pooled vocabulary must not be so broad that anything passes."""
+        sc = next(s for s in load_scenarios(SCENARIO_DIR)
+                  if s.expected_archetype == "disk_full")
+        wrong = "the TLS certificate expired and the load balancer rejected connections"
+        hits = sum(1 for k in sc.root_cause_keywords if k in wrong.lower())
+        assert hits < 2, f"an unrelated diagnosis matched {hits} keywords"

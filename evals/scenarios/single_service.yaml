@@ -6,11 +6,21 @@
   expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - intermediate
   - certificate
   - expired
+  - automated
+  - renewal
+  - disabled
+  - during
+  - migration
+  - months
+  - earlier
   - expiry
-  - monitoring
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -31,6 +41,17 @@
   - provisioned
   - capacity
   - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -47,11 +68,21 @@
   expected_root_cause: A cache flush during deploy left warehouse-sync empty. Every in-flight request
     missed and recomputed at once rather than the first one populating the entry for the rest.
   root_cause_keywords:
-  - during
-  - deploy
+  - entries
+  - written
+  - expired
+  - simultaneously
   - missed
   - recomputed
-  - rather
+  - concurrently
+  - hammering
+  - backing
+  - thundering
+  - expiry
+  - boundary
+  - cache
+  - stampede
+  - thundering-herd
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -72,6 +103,17 @@
   - unassigned
   - cluster
   - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -94,6 +136,16 @@
   - automated
   - renewal
   - disabled
+  - during
+  - migration
+  - months
+  - earlier
+  - expiry
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -108,11 +160,21 @@
   expected_root_cause: An intermediate CA certificate in email-adapter's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - intermediate
   - certificate
   - expired
+  - automated
+  - renewal
+  - disabled
+  - during
+  - migration
+  - months
+  - earlier
   - expiry
-  - monitoring
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -133,6 +195,16 @@
   - seconds
   - backfill
   - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -147,11 +219,22 @@
   expected_root_cause: A rolling restart proceeded faster than shard recovery, so multiple nodes holding
     copies of the same shard were down simultaneously.
   root_cause_keywords:
-  - rolling
-  - restart
-  - proceeded
-  - faster
-  - recovery
+  - primary
+  - shards
+  - unassigned
+  - cluster
+  - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -168,11 +251,22 @@
   expected_root_cause: A campaign launched without capacity planning notice. checkout-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
-  - campaign
-  - launched
-  - without
+  - traffic
+  - exceeded
+  - provisioned
   - capacity
-  - planning
+  - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -189,11 +283,22 @@
   expected_root_cause: A batch job began running during peak hours after a schedule change, consuming
     the same rate-limit quota as live customer traffic.
   root_cause_keywords:
-  - running
+  - exceeded
   - during
+  - traffic
+  - backoff
+  - turned
+  - breached
+  - further
+  - harder
+  - system
+  - recover
+  - running
   - schedule
-  - change
-  - consuming
+  - rate-limit
+  - external
+  - retry
+  - backoff
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -208,11 +313,21 @@
   expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - intermediate
   - certificate
   - expired
+  - automated
+  - renewal
+  - disabled
+  - during
+  - migration
+  - months
+  - earlier
   - expiry
-  - monitoring
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -233,6 +348,17 @@
   - configured
   - threads
   - blocked
+  - indefinitely
+  - waiting
+  - saturating
+  - making
+  - appear
+  - failure
+  - victim
+  - cascade
+  - timeout
+  - dependency
+  - circuit-breaker
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -248,11 +374,22 @@
     added in the previous release failed to close its connection on the error branch, so each failed request
     permanently leaked one connection from the pool.
   root_cause_keywords:
+  - connection
+  - exhausted
+  - introduced
+  - earlier
   - connections
+  - longer
+  - timeout
+  - assumed
+  - normal
+  - concurrency
   - checked
-  - returned
-  - previous
-  - release
+  - queued
+  - database
+  - connection-pool
+  - timeout
+  - saturation
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -275,6 +412,16 @@
   - expired
   - simultaneously
   - missed
+  - recomputed
+  - concurrently
+  - hammering
+  - backing
+  - thundering
+  - expiry
+  - boundary
+  - cache
+  - stampede
+  - thundering-herd
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -289,11 +436,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in payment-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -316,6 +473,16 @@
   - segments
   - accumulated
   - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -338,6 +505,16 @@
   - seconds
   - backfill
   - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -353,10 +530,21 @@
     optional field. Requests that happened to include it hit the exception path.
   root_cause_keywords:
   - release
-  - introduced
-  - unguarded
-  - dereference
-  - optional
+  - changed
+  - response
+  - string
+  - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -379,6 +567,17 @@
   - traffic
   - backoff
   - turned
+  - breached
+  - further
+  - harder
+  - system
+  - recover
+  - running
+  - schedule
+  - rate-limit
+  - external
+  - retry
+  - backoff
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -393,11 +592,22 @@
   expected_root_cause: Disk pressure on one kafka-events broker caused it to drop out of the ISR for its
     partitions, and leadership could not move while it was still nominally alive.
   root_cause_keywords:
-  - pressure
   - broker
-  - caused
+  - cluster
+  - offline
   - partitions
-  - leadership
+  - replica
+  - lowered
+  - during
+  - earlier
+  - incident
+  - restored
+  - became
+  - unavailable
+  - kafka
+  - queue
+  - replication
+  - broker
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -420,6 +630,17 @@
   - response
   - string
   - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -436,11 +657,22 @@
   expected_root_cause: A rolling restart proceeded faster than shard recovery, so multiple nodes holding
     copies of the same shard were down simultaneously.
   root_cause_keywords:
-  - rolling
-  - restart
-  - proceeded
-  - faster
-  - recovery
+  - primary
+  - shards
+  - unassigned
+  - cluster
+  - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -458,10 +690,21 @@
     optional field. Requests that happened to include it hit the exception path.
   root_cause_keywords:
   - release
-  - introduced
-  - unguarded
-  - dereference
-  - optional
+  - changed
+  - response
+  - string
+  - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -478,11 +721,22 @@
   expected_root_cause: An environment variable was set in the deployment manifest but absent from the
     canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
   root_cause_keywords:
+  - config
+  - change
+  - applied
+  - replicas
+  - routed
+  - replica
+  - failed
+  - apparent
+  - randomness
+  - balancing
   - environment
   - variable
-  - deployment
-  - manifest
-  - absent
+  - config
+  - drift
+  - deploy
+  - consistency
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -505,6 +759,17 @@
   - configured
   - threads
   - blocked
+  - indefinitely
+  - waiting
+  - saturating
+  - making
+  - appear
+  - failure
+  - victim
+  - cascade
+  - timeout
+  - dependency
+  - circuit-breaker
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -519,11 +784,22 @@
   expected_root_cause: A campaign launched without capacity planning notice. cart-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
-  - campaign
-  - launched
-  - without
+  - traffic
+  - exceeded
+  - provisioned
   - capacity
-  - planning
+  - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -540,11 +816,22 @@
   expected_root_cause: A deadlock between two locks acquired in inconsistent order gradually consumed
     the pool as more requests hit the same path.
   root_cause_keywords:
+  - thread
+  - occupied
+  - threads
+  - blocked
+  - synchronous
+  - timeout
+  - waiting
+  - rather
+  - running
+  - stayed
+  - silent
   - deadlock
-  - between
-  - acquired
-  - inconsistent
-  - gradually
+  - threads
+  - saturation
+  - deadlock
+  - runtime
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -561,11 +848,22 @@
   expected_root_cause: A campaign launched without capacity planning notice. order-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
-  - campaign
-  - launched
-  - without
+  - traffic
+  - exceeded
+  - provisioned
   - capacity
-  - planning
+  - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -582,10 +880,21 @@
   expected_root_cause: A single oversized key on redis-sessions consumed a disproportionate share of the
     node's memory, forcing eviction of the entries that actually mattered.
   root_cause_keywords:
-  - single
-  - oversized
-  - consumed
-  - disproportionate
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
   - memory
   expected_tools:
   - get_service_logs
@@ -609,6 +918,17 @@
   - applied
   - replicas
   - routed
+  - replica
+  - failed
+  - apparent
+  - randomness
+  - balancing
+  - environment
+  - variable
+  - config
+  - drift
+  - deploy
+  - consistency
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -625,11 +945,21 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
   - listener
   - registered
   - unregistered
   - permanently
-  - reachable
+  - memory
+  - restart
+  - leak
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -646,11 +976,22 @@
   expected_root_cause: A campaign launched without capacity planning notice. cart-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
-  - campaign
-  - launched
-  - without
+  - traffic
+  - exceeded
+  - provisioned
   - capacity
-  - planning
+  - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -667,11 +1008,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in user-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -688,11 +1039,21 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - analytical
-  - replica
-  - blocked
-  - replay
-  - progressively
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -707,10 +1068,21 @@
   expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
     memory, forcing eviction of the entries that actually mattered.
   root_cause_keywords:
-  - single
-  - oversized
-  - consumed
-  - disproportionate
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
   - memory
   expected_tools:
   - get_service_logs
@@ -734,6 +1106,17 @@
   - configured
   - threads
   - blocked
+  - indefinitely
+  - waiting
+  - saturating
+  - making
+  - appear
+  - failure
+  - victim
+  - cascade
+  - timeout
+  - dependency
+  - circuit-breaker
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -749,10 +1132,21 @@
     optional field. Requests that happened to include it hit the exception path.
   root_cause_keywords:
   - release
-  - introduced
-  - unguarded
-  - dereference
-  - optional
+  - changed
+  - response
+  - string
+  - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -775,6 +1169,17 @@
   - provisioned
   - capacity
   - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_logs
   - search_similar_incidents
@@ -791,10 +1196,21 @@
   expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
     memory, forcing eviction of the entries that actually mattered.
   root_cause_keywords:
-  - single
-  - oversized
-  - consumed
-  - disproportionate
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
   - memory
   expected_tools:
   - get_service_logs
@@ -818,6 +1234,16 @@
   - throughput
   - synchronous
   - release
+  - roughly
+  - tripled
+  - processing
+  - pushing
+  - consumption
+  - production
+  - consumer
+  - kafka
+  - queue
+  - throughput
   expected_tools:
   - get_service_logs
   - search_similar_incidents

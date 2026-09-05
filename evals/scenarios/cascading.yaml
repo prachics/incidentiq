@@ -6,11 +6,21 @@
   expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - intermediate
   - certificate
   - expired
+  - automated
+  - renewal
+  - disabled
+  - during
+  - migration
+  - months
+  - earlier
   - expiry
-  - monitoring
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -28,11 +38,21 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - analytical
-  - replica
-  - blocked
-  - replay
-  - progressively
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -51,11 +71,22 @@
   expected_root_cause: A campaign launched without capacity planning notice. ml-scoring-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
-  - campaign
-  - launched
-  - without
+  - traffic
+  - exceeded
+  - provisioned
   - capacity
-  - planning
+  - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -81,6 +112,17 @@
   - response
   - string
   - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -106,6 +148,17 @@
   - policy
   - evicting
   - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
+  - memory
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -131,6 +184,17 @@
   - policy
   - evicting
   - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
+  - memory
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -150,11 +214,21 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - analytical
-  - replica
-  - blocked
-  - replay
-  - progressively
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -172,11 +246,21 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - analytical
-  - replica
-  - blocked
-  - replay
-  - progressively
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -194,11 +278,21 @@
   expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - intermediate
   - certificate
   - expired
+  - automated
+  - renewal
+  - disabled
+  - during
+  - migration
+  - months
+  - earlier
   - expiry
-  - monitoring
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -217,11 +311,22 @@
     added in the previous release failed to close its connection on the error branch, so each failed request
     permanently leaked one connection from the pool.
   root_cause_keywords:
+  - connection
+  - exhausted
+  - introduced
+  - earlier
   - connections
+  - longer
+  - timeout
+  - assumed
+  - normal
+  - concurrency
   - checked
-  - returned
-  - previous
-  - release
+  - queued
+  - database
+  - connection-pool
+  - timeout
+  - saturation
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -247,6 +352,16 @@
   - seconds
   - backfill
   - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -270,6 +385,17 @@
   - traffic
   - backoff
   - turned
+  - breached
+  - further
+  - harder
+  - system
+  - recover
+  - running
+  - schedule
+  - rate-limit
+  - external
+  - retry
+  - backoff
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -292,6 +418,16 @@
   - seconds
   - backfill
   - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -315,6 +451,17 @@
   - traffic
   - backoff
   - turned
+  - breached
+  - further
+  - harder
+  - system
+  - recover
+  - running
+  - schedule
+  - rate-limit
+  - external
+  - retry
+  - backoff
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -337,6 +484,16 @@
   - seconds
   - backfill
   - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -361,6 +518,17 @@
   - traffic
   - backoff
   - turned
+  - breached
+  - further
+  - harder
+  - system
+  - recover
+  - running
+  - schedule
+  - rate-limit
+  - external
+  - retry
+  - backoff
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -377,11 +545,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in user-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -401,11 +579,21 @@
   expected_root_cause: A cache flush during deploy left feature-store empty. Every in-flight request missed
     and recomputed at once rather than the first one populating the entry for the rest.
   root_cause_keywords:
-  - during
-  - deploy
+  - entries
+  - written
+  - expired
+  - simultaneously
   - missed
   - recomputed
-  - rather
+  - concurrently
+  - hammering
+  - backing
+  - thundering
+  - expiry
+  - boundary
+  - cache
+  - stampede
+  - thundering-herd
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -429,6 +617,17 @@
   - unassigned
   - cluster
   - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -449,11 +648,21 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
   - listener
   - registered
   - unregistered
   - permanently
-  - reachable
+  - memory
+  - restart
+  - leak
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -479,6 +688,17 @@
   - provisioned
   - capacity
   - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -498,11 +718,22 @@
   expected_root_cause: An environment variable was set in the deployment manifest but absent from the
     canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
   root_cause_keywords:
+  - config
+  - change
+  - applied
+  - replicas
+  - routed
+  - replica
+  - failed
+  - apparent
+  - randomness
+  - balancing
   - environment
   - variable
-  - deployment
-  - manifest
-  - absent
+  - config
+  - drift
+  - deploy
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -522,11 +753,22 @@
   expected_root_cause: An environment variable was set in the deployment manifest but absent from the
     canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
   root_cause_keywords:
+  - config
+  - change
+  - applied
+  - replicas
+  - routed
+  - replica
+  - failed
+  - apparent
+  - randomness
+  - balancing
   - environment
   - variable
-  - deployment
-  - manifest
-  - absent
+  - config
+  - drift
+  - deploy
+  - consistency
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -546,11 +788,21 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
   - listener
   - registered
   - unregistered
   - permanently
-  - reachable
+  - memory
+  - restart
+  - leak
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -570,11 +822,21 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
   - listener
   - registered
   - unregistered
   - permanently
-  - reachable
+  - memory
+  - restart
+  - leak
   expected_tools:
   - get_service_dependencies
   - get_service_logs

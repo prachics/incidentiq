@@ -6,11 +6,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in payment-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -34,6 +44,17 @@
   - unassigned
   - cluster
   - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -57,6 +78,17 @@
   - offline
   - partitions
   - replica
+  - lowered
+  - during
+  - earlier
+  - incident
+  - restored
+  - became
+  - unavailable
+  - kafka
+  - queue
+  - replication
+  - broker
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -80,6 +112,16 @@
   - automated
   - renewal
   - disabled
+  - during
+  - migration
+  - months
+  - earlier
+  - expiry
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
   expected_tools:
   - get_service_logs
   true_cause_service: carrier-adapter
@@ -95,11 +137,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
     dead tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -123,6 +175,17 @@
   - threads
   - blocked
   - synchronous
+  - timeout
+  - waiting
+  - rather
+  - running
+  - stayed
+  - silent
+  - deadlock
+  - threads
+  - saturation
+  - deadlock
+  - runtime
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -146,6 +209,17 @@
   - traffic
   - backoff
   - turned
+  - breached
+  - further
+  - harder
+  - system
+  - recover
+  - running
+  - schedule
+  - rate-limit
+  - external
+  - retry
+  - backoff
   expected_tools:
   - get_service_logs
   true_cause_service: warehouse-sync
@@ -161,11 +235,21 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
     dead tuples accumulated until the volume filled.
   root_cause_keywords:
-  - autovacuum
-  - unable
-  - largest
-  - tuples
+  - volume
+  - reached
+  - segments
   - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -189,6 +273,17 @@
   - unassigned
   - cluster
   - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -212,6 +307,16 @@
   - seconds
   - backfill
   - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_logs
   true_cause_service: payment-db
