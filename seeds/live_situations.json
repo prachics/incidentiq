@@ -1,0 +1,426 @@
+{
+  "generated_at": "2026-09-01T12:00:00+00:00",
+  "random_seed": 20260101,
+  "live_situations": [
+    {
+      "id": "LIVE-01",
+      "service": "auth-service",
+      "archetype": "db_pool_exhausted",
+      "archetype_name": "Database connection pool exhausted",
+      "dep": "user-db",
+      "onset": "2026-09-01T02:19:00+00:00",
+      "metric": "db_pool_active_connections",
+      "expected_root_cause": "All user-db connections were checked out and never returned. A code path added in the previous release failed to close its connection on the error branch, so each failed request permanently leaked one connection from the pool.",
+      "acceptable_remediation": "Restarted auth-service to reset the pool, then raised max_pool_size from 20 to 50 and set a 5s statement_timeout on user-db so a slow query can no longer hold a connection indefinitely.",
+      "remediation_tool": "restart_service",
+      "user_query": "something's wrong with auth-service. customers are complaining. help?",
+      "cascade_visible_in": [
+        "api-gateway",
+        "web-frontend"
+      ]
+    },
+    {
+      "id": "LIVE-02",
+      "service": "web-frontend",
+      "archetype": "bad_deploy_regression",
+      "archetype_name": "Regression introduced by a deploy",
+      "dep": "",
+      "onset": "2026-08-31T15:19:00+00:00",
+      "metric": "error_rate",
+      "expected_root_cause": "Release v3.0.2 of web-frontend changed a response field from a string to an object without a compatibility shim. Callers still on the old contract failed to deserialise it, producing 500s for exactly the fraction of traffic on old clients.",
+      "acceptable_remediation": "Rolled web-frontend back to the prior version. Error rate returned to baseline within 90 seconds. The change was reshipped behind a feature flag with the compatibility shim in place.",
+      "remediation_tool": "rollback_deploy",
+      "user_query": "getting paged for web-frontend, latency is way up. what's going on?",
+      "cascade_visible_in": [],
+      "triggering_deploy": "DEP-00153"
+    },
+    {
+      "id": "LIVE-03",
+      "service": "search-service",
+      "archetype": "search_shard_unassigned",
+      "archetype_name": "Search cluster shards unassigned",
+      "dep": "",
+      "onset": "2026-09-01T00:19:00+00:00",
+      "metric": "unassigned_shards",
+      "expected_root_cause": "Two primary shards on search-service were unassigned after a node left the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had crossed the high watermark. Queries silently returned partial results rather than failing.",
+      "acceptable_remediation": "Paused the rolling restart until green, then added a health gate between nodes.",
+      "remediation_tool": "scale_service",
+      "user_query": "search-service is throwing errors and I'm not sure why. Started maybe an hour ago.",
+      "cascade_visible_in": [
+        "api-gateway",
+        "catalog-service",
+        "web-frontend"
+      ]
+    },
+    {
+      "id": "LIVE-04",
+      "service": "carrier-adapter",
+      "archetype": "upstream_rate_limit",
+      "archetype_name": "Third-party rate limit exceeded",
+      "dep": "",
+      "onset": "2026-08-31T22:00:00+00:00",
+      "metric": "error_rate",
+      "expected_root_cause": "A batch job began running during peak hours after a schedule change, consuming the same rate-limit quota as live customer traffic.",
+      "acceptable_remediation": "Added a token-bucket limiter in carrier-adapter sized just under the provider's quota, and replaced the retry loop with exponential backoff honouring the Retry-After header. Peak-hour failures went to zero.",
+      "remediation_tool": null,
+      "user_query": "carrier-adapter is throwing errors and I'm not sure why. Started maybe an hour ago.",
+      "cascade_visible_in": [
+        "shipping-service",
+        "api-gateway",
+        "web-frontend"
+      ]
+    },
+    {
+      "id": "LIVE-05",
+      "service": "checkout-service",
+      "archetype": "config_drift",
+      "archetype_name": "Configuration drift between environments",
+      "dep": "",
+      "onset": "2026-09-01T00:53:00+00:00",
+      "metric": "error_rate",
+      "expected_root_cause": "An environment variable was set in the deployment manifest but absent from the canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.",
+      "acceptable_remediation": "Reapplied the configuration to all replicas and restarted checkout-service to pick it up. Added a config-hash label to pods and an alert when replicas of the same deployment disagree.",
+      "remediation_tool": "restart_service",
+      "user_query": "getting paged for checkout-service, latency is way up. what's going on?",
+      "cascade_visible_in": [
+        "api-gateway",
+        "web-frontend"
+      ],
+      "triggering_deploy": "DEP-00154"
+    },
+    {
+      "id": "LIVE-06",
+      "service": "api-gateway",
+      "archetype": "config_drift",
+      "archetype_name": "Configuration drift between environments",
+      "dep": "",
+      "onset": "2026-09-01T02:38:00+00:00",
+      "metric": "error_rate",
+      "expected_root_cause": "A config change was applied to two of three replicas of api-gateway and not the third. Requests routed to the stale replica used the old value and failed. The apparent randomness was just load balancing.",
+      "acceptable_remediation": "Corrected the canary overlay and added a required-variable check to the startup path so a missing value fails fast instead of silently defaulting.",
+      "remediation_tool": "restart_service",
+      "user_query": "we're seeing failures on api-gateway. no idea if it's us or something downstream",
+      "cascade_visible_in": [
+        "web-frontend"
+      ],
+      "triggering_deploy": "DEP-00155"
+    },
+    {
+      "id": "LIVE-07",
+      "service": "shipping-service",
+      "archetype": "db_pool_exhausted",
+      "archetype_name": "Database connection pool exhausted",
+      "dep": "shipping-db",
+      "onset": "2026-09-01T07:47:00+00:00",
+      "metric": "db_pool_active_connections",
+      "expected_root_cause": "All shipping-db connections were checked out and never returned. A code path added in the previous release failed to close its connection on the error branch, so each failed request permanently leaked one connection from the pool.",
+      "acceptable_remediation": "Restarted shipping-service to reset the pool, then raised max_pool_size from 20 to 50 and set a 5s statement_timeout on shipping-db so a slow query can no longer hold a connection indefinitely.",
+      "remediation_tool": "restart_service",
+      "user_query": "getting paged for shipping-service, latency is way up. what's going on?",
+      "cascade_visible_in": [
+        "api-gateway",
+        "web-frontend"
+      ]
+    },
+    {
+      "id": "LIVE-08",
+      "service": "shipping-db",
+      "archetype": "replica_lag",
+      "archetype_name": "Read replica lag serving stale data",
+      "dep": "",
+      "onset": "2026-08-31T19:38:00+00:00",
+      "metric": "replication_lag_seconds",
+      "expected_root_cause": "Replication lag on shipping-db reached 240 seconds. A bulk backfill job saturated the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read traffic load-balanced across replicas therefore returned data up to four minutes old.",
+      "acceptable_remediation": "Terminated the blocking query and set a statement timeout on the replica so analytical work can no longer stall replay.",
+      "remediation_tool": null,
+      "user_query": "we're seeing failures on shipping-db. no idea if it's us or something downstream",
+      "cascade_visible_in": [
+        "shipping-service",
+        "api-gateway",
+        "web-frontend"
+      ]
+    },
+    {
+      "id": "LIVE-09",
+      "service": "email-adapter",
+      "archetype": "upstream_rate_limit",
+      "archetype_name": "Third-party rate limit exceeded",
+      "dep": "",
+      "onset": "2026-09-01T07:47:00+00:00",
+      "metric": "error_rate",
+      "expected_root_cause": "The provider's rate limit was exceeded during peak traffic. A retry loop with no backoff turned each rate-limited request into four, so the limit was breached further the harder the system tried to recover.",
+      "acceptable_remediation": "Moved the batch job back to off-peak hours and gave it a separate, lower-priority quota so it cannot starve live traffic.",
+      "remediation_tool": null,
+      "user_query": "email-adapter looks unhealthy in the dashboard but I can't tell what changed",
+      "cascade_visible_in": [
+        "notification-service"
+      ]
+    },
+    {
+      "id": "LIVE-10",
+      "service": "order-service",
+      "archetype": "thread_pool_saturation",
+      "archetype_name": "Thread pool saturation",
+      "dep": "",
+      "onset": "2026-09-01T04:53:00+00:00",
+      "metric": "thread_pool_active",
+      "expected_root_cause": "A deadlock between two locks acquired in inconsistent order gradually consumed the pool as more requests hit the same path.",
+      "acceptable_remediation": "Restarted order-service to clear the blocked pool, then added timeouts to the blocking call and a bulkhead limiting how much of the pool any one dependency can occupy. Added an alert on pool utilisation, since CPU alerts cannot see this.",
+      "remediation_tool": "restart_service",
+      "user_query": "order-service looks unhealthy in the dashboard but I can't tell what changed",
+      "cascade_visible_in": [
+        "api-gateway",
+        "checkout-service",
+        "web-frontend"
+      ]
+    },
+    {
+      "id": "LIVE-11",
+      "service": "order-db",
+      "archetype": "disk_full",
+      "archetype_name": "Disk exhaustion on a datastore",
+      "dep": "",
+      "onset": "2026-09-01T01:53:00+00:00",
+      "metric": "disk_usage_pct",
+      "expected_root_cause": "Autovacuum had been unable to keep up on the largest table in order-db, so dead tuples accumulated until the volume filled.",
+      "acceptable_remediation": "Ran a manual vacuum full on the affected table during a maintenance window, expanded the volume, and tuned autovacuum thresholds for the table's write rate.",
+      "remediation_tool": "scale_service",
+      "user_query": "order-db looks unhealthy in the dashboard but I can't tell what changed",
+      "cascade_visible_in": [
+        "order-service",
+        "api-gateway",
+        "checkout-service"
+      ]
+    },
+    {
+      "id": "LIVE-12",
+      "service": "stripe-adapter",
+      "archetype": "upstream_rate_limit",
+      "archetype_name": "Third-party rate limit exceeded",
+      "dep": "",
+      "onset": "2026-08-31T19:47:00+00:00",
+      "metric": "error_rate",
+      "expected_root_cause": "A batch job began running during peak hours after a schedule change, consuming the same rate-limit quota as live customer traffic.",
+      "acceptable_remediation": "Added a token-bucket limiter in stripe-adapter sized just under the provider's quota, and replaced the retry loop with exponential backoff honouring the Retry-After header. Peak-hour failures went to zero.",
+      "remediation_tool": null,
+      "user_query": "something's wrong with stripe-adapter. customers are complaining. help?",
+      "cascade_visible_in": [
+        "payment-service",
+        "checkout-service",
+        "api-gateway"
+      ]
+    }
+  ],
+  "labelled_retrieval": [
+    {
+      "situation_id": "LIVE-01",
+      "query": "something's wrong with auth-service. customers are complaining. help?",
+      "service": "auth-service",
+      "archetype": "db_pool_exhausted",
+      "relevant_incident_ids": [
+        "INC-00031",
+        "INC-00111",
+        "INC-00156",
+        "INC-00242",
+        "INC-00290",
+        "INC-00365",
+        "INC-00463"
+      ],
+      "relevant_count": 7,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-02",
+      "query": "getting paged for web-frontend, latency is way up. what's going on?",
+      "service": "web-frontend",
+      "archetype": "bad_deploy_regression",
+      "relevant_incident_ids": [
+        "INC-00052",
+        "INC-00055",
+        "INC-00072",
+        "INC-00312"
+      ],
+      "relevant_count": 4,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-03",
+      "query": "search-service is throwing errors and I'm not sure why. Started maybe an hour ago.",
+      "service": "search-service",
+      "archetype": "search_shard_unassigned",
+      "relevant_incident_ids": [
+        "INC-00013",
+        "INC-00020",
+        "INC-00057",
+        "INC-00113",
+        "INC-00129",
+        "INC-00146",
+        "INC-00226",
+        "INC-00352",
+        "INC-00396",
+        "INC-00409",
+        "INC-00418",
+        "INC-00448",
+        "INC-00473"
+      ],
+      "relevant_count": 13,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-04",
+      "query": "carrier-adapter is throwing errors and I'm not sure why. Started maybe an hour ago.",
+      "service": "carrier-adapter",
+      "archetype": "upstream_rate_limit",
+      "relevant_incident_ids": [
+        "INC-00067",
+        "INC-00123",
+        "INC-00237",
+        "INC-00275",
+        "INC-00419"
+      ],
+      "relevant_count": 5,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-05",
+      "query": "getting paged for checkout-service, latency is way up. what's going on?",
+      "service": "checkout-service",
+      "archetype": "config_drift",
+      "relevant_incident_ids": [
+        "INC-00049",
+        "INC-00206",
+        "INC-00425",
+        "INC-00462",
+        "INC-00496"
+      ],
+      "relevant_count": 5,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-06",
+      "query": "we're seeing failures on api-gateway. no idea if it's us or something downstream",
+      "service": "api-gateway",
+      "archetype": "config_drift",
+      "relevant_incident_ids": [
+        "INC-00131",
+        "INC-00189",
+        "INC-00241",
+        "INC-00300",
+        "INC-00411",
+        "INC-00425",
+        "INC-00441",
+        "INC-00462"
+      ],
+      "relevant_count": 8,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-07",
+      "query": "getting paged for shipping-service, latency is way up. what's going on?",
+      "service": "shipping-service",
+      "archetype": "db_pool_exhausted",
+      "relevant_incident_ids": [
+        "INC-00031",
+        "INC-00111",
+        "INC-00170",
+        "INC-00242",
+        "INC-00493"
+      ],
+      "relevant_count": 5,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-08",
+      "query": "we're seeing failures on shipping-db. no idea if it's us or something downstream",
+      "service": "shipping-db",
+      "archetype": "replica_lag",
+      "relevant_incident_ids": [
+        "INC-00050",
+        "INC-00119",
+        "INC-00220",
+        "INC-00286",
+        "INC-00363",
+        "INC-00371",
+        "INC-00484",
+        "INC-00499"
+      ],
+      "relevant_count": 8,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-09",
+      "query": "email-adapter looks unhealthy in the dashboard but I can't tell what changed",
+      "service": "email-adapter",
+      "archetype": "upstream_rate_limit",
+      "relevant_incident_ids": [
+        "INC-00041",
+        "INC-00250"
+      ],
+      "relevant_count": 2,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-10",
+      "query": "order-service looks unhealthy in the dashboard but I can't tell what changed",
+      "service": "order-service",
+      "archetype": "thread_pool_saturation",
+      "relevant_incident_ids": [
+        "INC-00092",
+        "INC-00354",
+        "INC-00369",
+        "INC-00486"
+      ],
+      "relevant_count": 4,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-11",
+      "query": "order-db looks unhealthy in the dashboard but I can't tell what changed",
+      "service": "order-db",
+      "archetype": "disk_full",
+      "relevant_incident_ids": [
+        "INC-00036",
+        "INC-00059",
+        "INC-00121",
+        "INC-00145",
+        "INC-00147",
+        "INC-00168",
+        "INC-00208",
+        "INC-00233",
+        "INC-00268",
+        "INC-00324",
+        "INC-00329",
+        "INC-00338",
+        "INC-00344",
+        "INC-00359",
+        "INC-00446",
+        "INC-00477"
+      ],
+      "relevant_count": 16,
+      "expect_no_useful_retrieval": false
+    },
+    {
+      "situation_id": "LIVE-12",
+      "query": "something's wrong with stripe-adapter. customers are complaining. help?",
+      "service": "stripe-adapter",
+      "archetype": "upstream_rate_limit",
+      "relevant_incident_ids": [
+        "INC-00011",
+        "INC-00125",
+        "INC-00179",
+        "INC-00225",
+        "INC-00240",
+        "INC-00266",
+        "INC-00271",
+        "INC-00282",
+        "INC-00373",
+        "INC-00379",
+        "INC-00404",
+        "INC-00414",
+        "INC-00429"
+      ],
+      "relevant_count": 13,
+      "expect_no_useful_retrieval": false
+    }
+  ]
+}
