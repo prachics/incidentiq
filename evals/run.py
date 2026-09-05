@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 import time
@@ -143,10 +144,17 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
             r.failure_note = "blamed the victim service instead of the downstream cause"
 
     # ── Did it describe the right mechanism? ────────────────
+    # Keywords are pooled across every narrative variant of the archetype (see
+    # evals/generate_scenarios._archetype_keywords), so the pool is larger and a
+    # proportion threshold no longer means anything stable. Ask for a small
+    # absolute number of hits instead: enough that the agent clearly named this
+    # failure mode, few enough that it is not required to echo one variant's
+    # exact phrasing.
+    MIN_KEYWORD_HITS = 2
     r.total_keywords = len(scenario.root_cause_keywords)
     r.matched_keywords = sum(1 for k in scenario.root_cause_keywords if k in text)
     mechanism_ok = (
-        r.total_keywords == 0 or r.matched_keywords / r.total_keywords >= 0.4
+        r.total_keywords == 0 or r.matched_keywords >= min(MIN_KEYWORD_HITS, r.total_keywords)
     )
 
     # ── Remediation ─────────────────────────────────────────
@@ -165,8 +173,9 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
         elif not r.identified_cause:
             r.failure_note = "did not name the causing service"
         elif not mechanism_ok:
-            r.failure_note = (f"named the service but not the mechanism "
-                              f"({r.matched_keywords}/{r.total_keywords} keywords)")
+            r.failure_note = (f"named the service but not the failure mode "
+                              f"({r.matched_keywords} of {r.total_keywords} archetype "
+                              f"terms matched, needed {MIN_KEYWORD_HITS})")
         elif not r.correct_remediation:
             r.failure_note = (f"proposed {proposed_tool!r}, expected one of "
                               f"{scenario.acceptable_remediation_tools}")
@@ -276,7 +285,10 @@ def aggregate(results: list[ScenarioResult], settings: Settings) -> dict[str, An
         "tool_success_rate": round(successes / attempts, 4) if attempts else None,
         "tool_attempts": attempts,
         "median_latency_s": round(statistics.median(latencies), 1),
-        "p95_latency_s": round(latencies[max(0, int(n * 0.95) - 1)], 1),
+        # ceil, not int: with n=4, int(0.95*4)-1 = 2 picks the third of four
+        # values as "p95", which understates the tail exactly when the sample is
+        # small enough for the tail to matter most.
+        "p95_latency_s": round(latencies[min(n - 1, math.ceil(0.95 * n) - 1)], 1),
         "mean_input_tokens": round(statistics.mean(r.input_tokens for r in results)),
         "mean_output_tokens": round(statistics.mean(r.output_tokens for r in results)),
         "abstention_accuracy": (

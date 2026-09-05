@@ -81,8 +81,28 @@ UNKNOWN_TOPICS = [
 ]
 
 
+def _archetype_keywords(arch: A.Archetype, n: int = 12) -> list[str]:
+    """Grading vocabulary for an archetype, pooled across ALL its variants.
+
+    This started as keywords from the one root-cause variant the scenario
+    happened to draw, and that was wrong in a way worth recording. Each
+    archetype has two narratives for the same failure - `disk_full` is either
+    "WAL segments accumulated because archiving was failing" or "autovacuum
+    could not keep up and dead tuples filled the volume". The corpus contains
+    both. An agent that correctly diagnoses disk exhaustion on the right service
+    and describes the *other* variant is right, and was being scored 0/5.
+
+    So the ground truth is the archetype, which is determinate, rather than the
+    particular narrative, which is not. Keywords are pooled from every variant
+    plus the archetype's tags, and grading asks for a couple of hits rather than
+    a proportion of a set whose size now varies.
+    """
+    pool = " ".join(arch.root_cause) + " " + " ".join(arch.tags) + " " + arch.name
+    return _keywords(pool, n) + [t for t in arch.tags if len(t) > 3]
+
+
 def _keywords(text: str, n: int = 5) -> list[str]:
-    """Distinctive words from the root cause, used for grading.
+    """Distinctive words from text, used for grading.
 
     Stopwords and short words removed; the remainder are terms the agent should
     plausibly use if it identified the same mechanism.
@@ -143,7 +163,7 @@ def gen_single_service(r: random.Random, n: int) -> list[Scenario]:
             id=f"SC-SS-{i + 1:03d}", kind="single_service",
             query=r.choice(PHRASINGS).format(svc=svc.name),
             expected_service=svc.name, expected_archetype=arch.key,
-            expected_root_cause=cause, root_cause_keywords=_keywords(cause),
+            expected_root_cause=cause, root_cause_keywords=_archetype_keywords(arch),
             expected_tools=["get_service_logs", "search_similar_incidents"],
             acceptable_remediation_tools=[arch.remediation_tool] if arch.remediation_tool else [],
             true_cause_service=svc.name, max_iterations=6,
@@ -177,7 +197,7 @@ def gen_cascading(r: random.Random, n: int) -> list[Scenario]:
             id=f"SC-CA-{i + 1:03d}", kind="cascading",
             query=r.choice(CASCADE_PHRASINGS).format(victim=victim),
             expected_service=cause_svc.name, expected_archetype=arch.key,
-            expected_root_cause=cause, root_cause_keywords=_keywords(cause),
+            expected_root_cause=cause, root_cause_keywords=_archetype_keywords(arch),
             expected_tools=["get_service_dependencies", "get_service_logs"],
             acceptable_remediation_tools=[arch.remediation_tool] if arch.remediation_tool else [],
             true_cause_service=cause_svc.name,
@@ -229,7 +249,7 @@ def gen_approval_required(r: random.Random, n: int) -> list[Scenario]:
             id=f"SC-AP-{i + 1:03d}", kind="approval_required",
             query=r.choice(PHRASINGS).format(svc=svc.name),
             expected_service=svc.name, expected_archetype=arch.key,
-            expected_root_cause=cause, root_cause_keywords=_keywords(cause),
+            expected_root_cause=cause, root_cause_keywords=_archetype_keywords(arch),
             expected_tools=["get_service_logs"],
             acceptable_remediation_tools=[arch.remediation_tool],
             requires_approval=True, approval_decision=decision,
@@ -252,7 +272,7 @@ def gen_tool_failure(r: random.Random, n: int) -> list[Scenario]:
             id=f"SC-TF-{i + 1:03d}", kind="tool_failure",
             query=r.choice(PHRASINGS).format(svc=svc.name),
             expected_service=svc.name, expected_archetype=arch.key,
-            expected_root_cause=cause, root_cause_keywords=_keywords(cause),
+            expected_root_cause=cause, root_cause_keywords=_archetype_keywords(arch),
             expected_tools=["get_service_logs"],
             acceptable_remediation_tools=[arch.remediation_tool] if arch.remediation_tool else [],
             true_cause_service=svc.name,
