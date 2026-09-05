@@ -130,3 +130,101 @@ def test_generation_is_deterministic():
     inc2 = generate.gen_incidents(r2)
     assert [i["id"] for i in inc1] == [i["id"] for i in inc2]
     assert [i["root_cause"] for i in inc1] == [i["root_cause"] for i in inc2]
+
+
+class TestArchetypeAnomalyGeneration:
+    """Every archetype must produce a detectable metric anomaly if it fires.
+
+    The live-situation tests only cover archetypes the RNG happened to select -
+    currently 9 of 16. The other 7, including both zero-baseline metrics, were
+    never exercised end to end. That is exactly where a silent defect hides: the
+    multiplicative-spike bug survived Phase 1 because `unassigned_shards` had no
+    live situation, and would have surfaced only when a scenario finally used it.
+
+    These tests drive the generator directly, one archetype at a time, so
+    coverage does not depend on chance.
+    """
+
+    @staticmethod
+    def _simulate(arch, service_name):
+        import datetime
+        import random
+
+        import archetypes as A  # noqa: F401
+        import generate as G
+
+        onset = G.NOW - datetime.timedelta(hours=6)
+        situation = [{
+            "id": "SIM", "service": service_name, "archetype": arch.key,
+            "dep": "", "onset": onset.isoformat(), "metric": arch.metric,
+            "cascade_visible_in": [],
+        }]
+        rows = G.gen_metrics(random.Random(7), situation)
+        before = [v for (svc, m, ts, v) in rows
+                  if svc == service_name and m == arch.metric and ts < onset]
+        after = [v for (svc, m, ts, v) in rows
+                 if svc == service_name and m == arch.metric and ts >= onset]
+        return before, after
+
+    @pytest.mark.parametrize(
+        "arch",
+        __import__("archetypes").ARCHETYPES,
+        ids=lambda a: a.key,
+    )
+    def test_archetype_produces_detectable_anomaly(self, arch):
+        import catalog as C
+
+        candidates = [
+            s for s in C.SERVICES
+            if s.kind in arch.applies_to
+            and (not arch.languages or s.language in arch.languages)
+        ]
+        assert candidates, f"{arch.key} applies to no service"
+
+        before, after = self._simulate(arch, candidates[0].name)
+        assert before and after, f"{arch.key}: no metric points generated for {arch.metric}"
+
+        mean_before = sum(before) / len(before)
+        # Not every anomaly is an increase: cache_hit_rate FALLS from 0.94 to
+        # 0.33 during a stampede. Taking max() would pick the value nearest
+        # baseline and report no movement. The signal is the largest deviation
+        # in whichever direction the metric actually moves.
+        peak_after = max(after, key=lambda v: abs(v - mean_before))
+        delta = abs(peak_after - mean_before)
+        direction = "rises" if peak_after > mean_before else "falls"
+
+        assert delta > 0, (
+            f"{arch.key} on {candidates[0].name}: {arch.metric} does not move at all "
+            f"(flat at {mean_before:.3f}). A multiplicative spike on a zero baseline "
+            f"is the usual cause."
+        )
+        # Relative movement, guarding against a change too small for a tool to
+        # surface as a signal.
+        relative = delta / max(abs(mean_before), 1e-6)
+        assert relative > 0.15 or delta >= 1.0, (
+            f"{arch.key}: {arch.metric} only {direction} {mean_before:.3f} -> "
+            f"{peak_after:.3f}; too small for a diagnostic tool to surface"
+        )
+
+    def test_zero_baseline_metrics_are_declared(self):
+        """Any archetype whose metric has a zero baseline must be listed in
+        ZERO_BASELINE_METRICS, or its spike silently multiplies zero by zero."""
+        import archetypes as A
+        import generate as G
+
+        for arch in A.ARCHETYPES:
+            baseline = G.BASELINES.get(arch.metric)
+            if baseline == 0.0:
+                assert arch.metric in G.ZERO_BASELINE_METRICS, (
+                    f"{arch.metric} has a zero baseline but is not in "
+                    "ZERO_BASELINE_METRICS - its anomaly will be 0 * spike = 0"
+                )
+
+    def test_every_archetype_metric_has_a_baseline(self):
+        """A metric with no BASELINES entry silently defaults to 1.0, which
+        makes the generated series meaningless rather than absent."""
+        import archetypes as A
+        import generate as G
+
+        missing = [a.metric for a in A.ARCHETYPES if a.metric not in G.BASELINES]
+        assert not missing, f"archetype metrics with no baseline defined: {missing}"
