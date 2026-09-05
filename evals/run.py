@@ -41,6 +41,9 @@ from incidentiq.config import Settings, get_settings  # noqa: E402
 from evals.scenario import Scenario, load_scenarios  # noqa: E402
 
 SCENARIO_DIR = REPO_ROOT / "evals" / "scenarios"
+# Set from --max-iterations so it lands in the results file: a run with a
+# reduced budget is not comparable with a full one, and the number must say so.
+ITERATION_CAP: int | None = None
 RESULTS_DIR = REPO_ROOT / "evals" / "results"
 
 
@@ -170,11 +173,13 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
     return r
 
 
-def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None) -> ScenarioResult:
+def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None,
+                 iteration_cap: int | None = None) -> ScenarioResult:
     from incidentiq.agent.graph import InvestigationRunner
 
     cfg = settings.model_copy(update={
-        "max_iterations": scenario.max_iterations,
+        "max_iterations": min(scenario.max_iterations, iteration_cap)
+                          if iteration_cap else scenario.max_iterations,
         "failure_injection_enabled": scenario.inject_failures,
         "failure_injection_rate": scenario.failure_rate,
     })
@@ -232,7 +237,12 @@ def aggregate(results: list[ScenarioResult], settings: Settings) -> dict[str, An
     attempts = sum(r.tool_attempts for r in results)
     successes = sum(r.tool_successes for r in results)
     latencies = sorted(r.latency_s for r in results)
+    # Two separate filters: a scenario can have a fully_grounded verdict while
+    # grounded_fraction is absent (or the reverse) if the judge partially
+    # failed. Averaging over the wrong set raises on None, and - worse - a
+    # single broken judge call would otherwise skew the mean silently.
     judged = [r for r in results if r.fully_grounded is not None]
+    with_fraction = [r for r in results if r.grounded_fraction is not None]
     approval = [r for r in results if r.kind == "approval_required"]
     failure = [r for r in results if r.kind == "tool_failure"]
     abstention = [r for r in results if r.kind == "no_retrieval"]
@@ -252,14 +262,17 @@ def aggregate(results: list[ScenarioResult], settings: Settings) -> dict[str, An
         "model": settings.ollama_model if settings.llm_provider == "ollama"
                  else settings.anthropic_model,
         "provider": settings.llm_provider,
+        "iteration_cap_override": ITERATION_CAP,
         "task_completion": round(sum(r.task_success for r in results) / n, 4),
         "grounded_response_rate": (
             round(sum(bool(r.fully_grounded) for r in judged) / len(judged), 4)
             if judged else None
         ),
         "mean_grounded_fraction": (
-            round(statistics.mean(r.grounded_fraction for r in judged), 4) if judged else None
+            round(statistics.mean(r.grounded_fraction for r in with_fraction), 4)
+            if with_fraction else None
         ),
+        "n_judged": len(judged),
         "tool_success_rate": round(successes / attempts, 4) if attempts else None,
         "tool_attempts": attempts,
         "median_latency_s": round(statistics.median(latencies), 1),
@@ -355,6 +368,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kind", help="run only one scenario kind")
     parser.add_argument("--limit", type=int, help="run only the first N")
+    parser.add_argument("--sample", type=int, metavar="N",
+                        help="stratified sample of N per scenario kind - use this rather "
+                             "than --limit for a dev subset, since --limit takes the first "
+                             "N and would run only one category")
+    parser.add_argument("--max-iterations", type=int, metavar="N",
+                        help="cap every scenario's iteration budget at N. Local "
+                             "inference at ~24 tok/s makes the full suite an overnight "
+                             "job; this trades depth for turnaround during development. "
+                             "Always reported in the results file, because it changes "
+                             "the numbers.")
     parser.add_argument("--no-judge", action="store_true",
                         help="skip groundedness scoring (roughly halves runtime)")
     parser.add_argument("--provider", help="override LLM_PROVIDER")
@@ -372,9 +395,17 @@ def main() -> int:
     if updates:
         settings = settings.model_copy(update=updates)
 
+    global ITERATION_CAP
+    ITERATION_CAP = args.max_iterations
+
     scenarios = load_scenarios(SCENARIO_DIR)
     if args.kind:
         scenarios = [s for s in scenarios if s.kind == args.kind]
+    if args.sample:
+        by_kind: dict[str, list[Scenario]] = {}
+        for sc in scenarios:
+            by_kind.setdefault(sc.kind, []).append(sc)
+        scenarios = [sc for group in by_kind.values() for sc in group[: args.sample]]
     if args.limit:
         scenarios = scenarios[: args.limit]
     if not scenarios:
@@ -394,7 +425,7 @@ def main() -> int:
     results: list[ScenarioResult] = []
     t0 = time.perf_counter()
     for i, scenario in enumerate(scenarios, 1):
-        r = run_scenario(scenario, settings, judge_llm)
+        r = run_scenario(scenario, settings, judge_llm, args.max_iterations)
         results.append(r)
         mark = "ok  " if r.task_success else ("ERR " if r.error else "fail")
         print(f"  [{i:>3}/{len(scenarios)}] {mark} {r.scenario_id:<12} "

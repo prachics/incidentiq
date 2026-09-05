@@ -98,6 +98,19 @@ python -m incidentiq.rag.indexer     # chunk + embed -> 680 searchable chunks
 python -m evals.retrieval_eval       # reproduce the Recall@5 number above
 ```
 
+To run the agent you also need an LLM. The default is local and free:
+
+```bash
+brew install ollama && ollama serve &
+ollama pull qwen2.5:14b              # ~9GB
+
+python -m evals.run --sample 3       # stratified subset, all 5 scenario kinds
+python -m evals.run                  # the full 100-scenario suite
+```
+
+Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env` to run against
+Claude instead. The provider interface is the only thing that changes.
+
 That is a working, fully-seeded system with no API key required — the default
 configuration uses local embeddings and a local LLM.
 
@@ -154,8 +167,8 @@ Methodology and per-run history: [`docs/EVALS.md`](docs/EVALS.md).
 |---|---|---|
 | 1 | Docker Compose, schema, migrations, seeded corpora + mock infra | **done** |
 | 2 | Chunking, embedding, hybrid search, metadata filtering, Recall@5 | **done** |
-| 3 | LangGraph agent, state persistence, tools, retries — then the eval harness | next |
-| 4 | Approval interrupts, approval API, immutable audit log | |
+| 3 | LangGraph agent, state persistence, tools, retries — then the eval harness | **done** |
+| 4 | Approval interrupts, approval API, immutable audit log | next |
 | 5 | Frontend: investigation, evidence, approval, trace | |
 | 6 | MCP server exposing the diagnostic tools | |
 
@@ -218,6 +231,30 @@ and a corpus of pure prose gains little.
 Full working — including a chunk-size sweep that came out a plateau rather than
 a peak, and a reproducibility check on the approximate index — in
 [`docs/EVALS.md`](docs/EVALS.md).
+
+### From Phase 3 — the agent
+
+**JSON mode guarantees syntax, not schema.** Constrained to valid JSON, a local
+14B model past ~3000 prompt tokens returned `{"incident_updates": ...}` where
+`root_cause` was expected. Parsing succeeded, every field read back `None`, and
+the agent emitted an empty proposal **having reasoned its way to the correct
+answer** — `reflect` had already said *"thread pool saturation and potential
+deadlocks"*. Fixed by passing a JSON Schema to the sampler for
+grammar-constrained decoding. Then again, because with no `required` array the
+grammar still let the model skip `root_cause` — which meant replacing nullable
+types with empty-string sentinels, since a field can only be required if it has
+a representable way to say "nothing here".
+
+**Retry classification matters more than retry count.** An unknown service name
+was classified as a transient failure, so the loop retried identical bad
+arguments three times per iteration and burned the whole budget without one
+successful call. Argument errors now break the loop and send back a specific
+correction — *"Did you mean: checkout-service?"* via trigram similarity.
+
+**Existence checks are not category checks.** The model proposed
+`get_service_logs` as a *remediation*. It is a registered tool, so an existence
+check passed — and it would have opened an approval request for an action that
+changes nothing.
 
 ## Documentation
 
