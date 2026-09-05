@@ -156,3 +156,114 @@ against an empty label set — and scored on abstention instead.
 
 **Cost.** Two scoring paths instead of one, and the eval report has to explain
 why the Recall@5 denominator is smaller than the scenario count.
+
+---
+
+## 7. Chunk 320 / overlap 64, chosen from a plateau rather than a peak
+
+**Date:** Phase 2
+
+**Decision.** Chunks of ~320 tokens with ~64 tokens of overlap, using recursive
+character splitting that prefers paragraph boundaries, then sentences, then
+lines, then words.
+
+**Why.** Swept 96 → 640 tokens with overlap fixed at 20%. Everything from 192
+upward scored identically (Recall@5 0.800); 96 and 128 were slightly worse
+(0.783). The result is a **plateau, not a peak** — most documents in this corpus
+are shorter than any of these budgets and are never split at all, so the
+parameter only affects the longer runbooks.
+
+Given a flat region, picking the argmax would be choosing between ties on noise.
+The rule used instead is to take every setting within tolerance of the best and
+choose the **middle** of that plateau. An edge setting is one corpus change away
+from falling off; on a 12-situation labelled set that robustness is worth more
+than a third decimal place.
+
+**Cost.** The choice is only justified for *this* corpus. A corpus of long
+postmortems would need re-sweeping, and the plateau would likely become a peak.
+
+**Reversal.** One flag and a re-index: about two seconds of embedding.
+
+---
+
+## 8. Weighted RRF with `keyword_weight = 0.5`
+
+**Date:** Phase 2
+
+**Decision.** Fuse the vector and keyword rankings with reciprocal rank fusion at
+the canonical `k = 60`, but weight the keyword ranker at 0.5 rather than 1.0.
+
+**Why.** Plain RRF weights both rankers equally, which rewards *agreement* over
+*confidence*. At k=60 a chunk ranked 10th by both rankers scores 2/70 = 0.029,
+beating a chunk ranked 1st by one ranker alone at 1/61 = 0.016. When one ranker
+is weaker than the other, its mediocre picks get promoted purely for being
+seconded.
+
+Measured: at weight 1.0, Recall@5 is 0.783; at 0.5 and 0.25 it is 0.800. `k`
+itself made no measurable difference (5, 10, 20 and 60 scored identically), so
+the canonical value is kept rather than tuned to noise.
+
+**Cost.** One more parameter that is corpus-specific. The weight encodes "the
+keyword ranker is somewhat weaker here", which is a property of this corpus, not
+a universal truth.
+
+**Reversal.** A keyword argument on `search()`.
+
+---
+
+## 9. Retrieval is measured twice: cold query and enriched query
+
+**Date:** Phase 2
+
+**Decision.** Every retrieval metric is reported under two conditions — the bare
+user report, and the user report plus the error signatures a first
+`get_service_logs` call returns.
+
+**Why.** The first version of this evaluation used only the bare report. Those
+numbers were bad (Recall@5 0.461) and the reason turned out to be a defect in the
+measurement rather than the retriever: a query like *"something's wrong with
+auth-service, customers are complaining, help?"* contains no information about
+the failure mode, while relevance is defined *by* the failure mode. The eval was
+scoring an impossible task.
+
+The agent does not retrieve from that text. Its `retrieve` node runs after
+`intake` has extracted entities and, on later loop iterations, after tools have
+returned evidence. Enriched is the operating condition; cold is the floor.
+
+Reporting both is more useful than replacing one with the other, because the gap
+between them (0.461 → 0.800) is itself a result: it quantifies how much
+retrieval improves *after* the first diagnostic call, which is the argument for
+looping back to retrieval rather than running it once.
+
+**Cost.** Every table has twice as many rows, and "Recall@5" is ambiguous unless
+the condition is stated. It is stated everywhere.
+
+---
+
+## 10. Incidents quote their error signatures
+
+**Date:** Phase 2 (migration `005`)
+
+**Decision.** Incident records carry an `error_signatures` column holding the log
+lines quoted in the write-up, and those lines are included in the embedded chunk
+text.
+
+**Why.** This began as a debugging result. Hybrid retrieval was performing at or
+below vector-only in every configuration, which contradicted the expectation.
+The cause was that the corpus contained no identifiers: `HikariPool`,
+`OutOfMemoryError`, `x509`, and `NOT_ENOUGH_REPLICAS` appeared in `log_entries`
+and **zero** times in the incident corpus. The keyword ranker had nothing
+distinctive to match, so fusion could only dilute the vector ranking.
+
+It was also simply unrealistic — a real postmortem quotes the error it was
+diagnosed from.
+
+After the change the keyword ranker scores 0.767 on its own, and fusion becomes
+worthwhile. The wider lesson, which is the interview-relevant part: hybrid
+retrieval is not universally better than dense retrieval. It is better when
+documents contain tokens embeddings cannot represent. A corpus of pure prose
+gains little from it.
+
+**Cost.** A schema migration and a corpus regeneration. The eval numbers from
+before this change are not comparable with those after it, which is why the
+migration file records the earlier figures in a comment.

@@ -10,7 +10,7 @@ having built it.
 |---|---|---|
 | 00 | [Orientation — what this system actually is](00-orientation.md) | 1 |
 | 01 | [Postgres, pgvector, and why the schema looks like that](01-postgres-and-pgvector.md) | 1 |
-| 02 | Chunking, embeddings, and hybrid retrieval | 2 |
+| 02 | [Chunking, embeddings, and hybrid retrieval](02-chunking-embeddings-hybrid-retrieval.md) | 2 |
 | 03 | Measuring retrieval: Recall@5 and what it does not tell you | 2 |
 | 04 | Agent loops, LangGraph, and why not a while loop | 3 |
 | 05 | Tool calling, schemas, and failure injection | 3 |
