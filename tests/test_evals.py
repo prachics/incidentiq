@@ -765,3 +765,83 @@ class TestScenariosAvoidConcurrentIncidents:
             "single_service": 40, "cascading": 25, "no_retrieval": 15,
             "approval_required": 10, "tool_failure": 10,
         }
+
+
+class TestResumability:
+    """A 100-scenario suite is a multi-hour job on local inference. Losing it to
+    a sleeping laptop at scenario 80 is not an acceptable failure mode, so
+    results are appended as each scenario finishes and `--resume` skips what is
+    already recorded.
+    """
+
+    @pytest.fixture
+    def progress_file(self, tmp_path):
+        return tmp_path / "progress_test.jsonl"
+
+    def _result(self, sid, success=True):
+        return ScenarioResult(scenario_id=sid, kind="single_service", query="q",
+                              task_success=success, latency_s=12.0, tool_attempts=3,
+                              tool_successes=3)
+
+    def test_append_then_load_round_trips(self, progress_file):
+        from evals.run import append_progress, load_progress
+        append_progress(progress_file, self._result("SC-SS-001"))
+        append_progress(progress_file, self._result("SC-SS-002", success=False))
+
+        loaded = load_progress(progress_file)
+        assert set(loaded) == {"SC-SS-001", "SC-SS-002"}
+        assert loaded["SC-SS-001"].task_success is True
+        assert loaded["SC-SS-002"].task_success is False
+        assert loaded["SC-SS-001"].latency_s == 12.0
+
+    def test_missing_file_loads_as_empty(self, tmp_path):
+        from evals.run import load_progress
+        assert load_progress(tmp_path / "nope.jsonl") == {}
+
+    def test_a_truncated_final_line_is_skipped_not_fatal(self, progress_file):
+        """Expected after a hard kill: the process died mid-write. That scenario
+        simply re-runs; it must not take the whole resume down with it."""
+        from evals.run import append_progress, load_progress
+        append_progress(progress_file, self._result("SC-SS-001"))
+        with progress_file.open("a") as fh:
+            fh.write('{"scenario_id": "SC-SS-002", "kind": "single_ser')
+
+        loaded = load_progress(progress_file)
+        assert set(loaded) == {"SC-SS-001"}
+
+    def test_blank_lines_are_tolerated(self, progress_file):
+        from evals.run import append_progress, load_progress
+        append_progress(progress_file, self._result("SC-SS-001"))
+        with progress_file.open("a") as fh:
+            fh.write("\n\n")
+        assert set(load_progress(progress_file)) == {"SC-SS-001"}
+
+    def test_progress_path_encodes_the_configuration(self):
+        """Resuming into a run with a different model, cap or judge setting
+        would silently mix incomparable results, so the configuration is in the
+        filename rather than checked after loading."""
+        from incidentiq.config import Settings
+
+        from evals.run import progress_path
+        a = progress_path(Settings(llm_provider="ollama", ollama_model="qwen2.5:14b"),
+                          None, 3, False)
+        b = progress_path(Settings(llm_provider="ollama", ollama_model="qwen2.5:14b"),
+                          None, 8, False)
+        c = progress_path(Settings(llm_provider="anthropic", anthropic_model="claude-sonnet-5"),
+                          None, 3, False)
+        d = progress_path(Settings(llm_provider="ollama", ollama_model="qwen2.5:14b"),
+                          None, 3, True)
+        assert len({a, b, c, d}) == 4, "configurations collide on the same progress file"
+        assert ":" not in a.name, "a colon in the filename breaks on some filesystems"
+
+    def test_resuming_skips_completed_scenarios(self, progress_file):
+        from evals.run import load_progress
+        all_ids = [f"SC-SS-{i:03d}" for i in range(1, 11)]
+        from evals.run import append_progress
+        for sid in all_ids[:6]:
+            append_progress(progress_file, self._result(sid))
+
+        completed = load_progress(progress_file)
+        todo = [sid for sid in all_ids if sid not in completed]
+        assert todo == all_ids[6:]
+        assert len(todo) == 4

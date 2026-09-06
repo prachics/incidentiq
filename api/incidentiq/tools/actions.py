@@ -126,7 +126,11 @@ class ScaleService(Tool):
 class RollbackDeployArgs(BaseModel):
     service: str = Field(description="Exact service name.")
     target_version: str = Field(
-        description="Version to roll back to, e.g. 'v2.14.1'. Must be a known deploy."
+        description=(
+            "Version to roll back to. Must be a version that appears in "
+            "get_recent_deploys output for this service - call it first if you "
+            "have not. Do not invent or guess a version string."
+        )
     )
     reason: str = Field(min_length=10, description="Why rollback is the right action.")
 
@@ -134,7 +138,17 @@ class RollbackDeployArgs(BaseModel):
     @classmethod
     def _looks_like_a_version(cls, v: str) -> str:
         if not v.startswith("v"):
-            raise ValueError(f"target_version should look like 'v1.2.3', got {v!r}")
+            # Deliberately no example version here. The previous message named
+            # 'v1.2.3', that message reached the model through the scratchpad
+            # after a failed attempt, and the model used it as the next
+            # attempt's value - on a service whose deploys were all v2.27.x. A
+            # concrete fake value in an error message is a value the model can
+            # copy.
+            raise ValueError(
+                f"target_version must start with 'v' and name a version from this "
+                f"service's deploy history; got {v!r}. Call get_recent_deploys to "
+                f"see the real versions."
+            )
         return v
 
 

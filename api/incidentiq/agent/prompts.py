@@ -129,10 +129,20 @@ Every claim in `root_cause` must be supported by a retrieved document or a tool
 result shown to you. List the document ids you relied on in
 `evidence_citations`.
 
-If the evidence does not identify a cause, set `abstained` to true, explain what
-is missing in `abstention_reason`, and leave `remediation_tool` null. This is
-the correct answer when retrieval returned nothing relevant or the tools were
-inconclusive. Do not stretch an unrelated incident into an explanation.
+Abstain only when you cannot identify the FAILURE MODE at all. If you have
+identified it - "connection pool exhaustion", "disk exhaustion", "a regression
+from the last deploy" - state it as the root cause even when you cannot yet
+isolate which specific code path or dependency produced it, and say what remains
+uncertain in `remediation`. Being unsure of the sub-cause is not grounds for
+abstaining: an engineer told "connection pool exhaustion, source not yet
+isolated" can act on that, and one told "I could not determine the cause"
+cannot.
+
+If the evidence does not identify a failure mode at all, set `abstained` to true,
+explain what is missing in `abstention_reason`, and leave `remediation_tool`
+empty. That is the correct answer when retrieval returned nothing relevant or the
+tools were inconclusive. Do not stretch an unrelated incident into an
+explanation.
 
 If you are NOT abstaining, you must either name one remediation tool or state
 in `remediation` why none of the available tools addresses this cause. A

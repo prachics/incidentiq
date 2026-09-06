@@ -23,6 +23,7 @@ models_cache/
 # Per-run timestamped eval output is transient; the named artifacts that back
 # the numbers in docs/EVALS.md are committed as evidence.
 evals/results/run_*.json
+evals/results/progress/
 evals/results/run_*.md
 
 # OS / editor
