@@ -264,6 +264,15 @@ where HNSW's approximation starts to bite.
 - **Structural relevance is a proxy.** A genuinely useful incident from an
   unrelated service is scored as a miss, making the reported recall a lower
   bound on real usefulness.
+- **47 of 100 scenarios accept any remediation, or none.** Eight archetypes have
+  no applicable write tool - the surface is fixed at restart / scale / rollback,
+  and disk exhaustion, certificate expiry and upstream rate limiting are not
+  fixed by any of them. Those scenarios grade diagnosis only, so an agent that
+  proposed an *inappropriate* action on one would not be penalised for it. That
+  is a real leniency. The stricter version - fail a scenario whose archetype has
+  no applicable tool if the agent proposes one anyway - is the better test and
+  has not been implemented, because it changes grading and this run was already
+  in flight.
 - **The enriched query uses ground-truth log data.** It is built from the actual
   error signatures present for that service, which is what a working
   `get_service_logs` returns — but it assumes the tool call succeeded. Phase 3
@@ -311,6 +320,38 @@ that would have quietly inflated later scenarios.
 **Every scenario got the evidence its failure would leave.** Without that, most
 scenarios were unanswerable from tool output and the suite was measuring
 something other than what it claimed.
+
+## When the agent fails in a way that looks careless, read the scenario first
+
+Three times now, a scenario expectation has been wrong rather than the agent.
+
+**`disk_full` expected `scale_service`.** The agent diagnosed disk exhaustion on
+`catalog-db` correctly, wrote "increase disk capacity or optimize disk usage",
+and proposed no tool. Graded: *proposed None, expected scale_service*. But
+`scale_service` changes **replica count**, and more replicas does nothing for a
+full disk. The write-tool surface is fixed at restart / scale / rollback, so
+disk exhaustion genuinely has no applicable remediation - and the correct
+behaviour is to say so. Two other archetypes had the same defect
+(`search_shard_unassigned`: "freed disk on the remaining nodes";
+`cache_node_eviction`: "raised maxmemory").
+
+**A two-variant archetype graded against one variant.** A correct diagnosis
+that used the other narrative scored 0 of 5 keywords.
+
+**Grading on `root_cause` alone.** An agent that named the service in its
+summary and its remediation arguments, but not inside that one string, was
+graded as not having named it.
+
+In each case the agent's behaviour was better than the score, and in each case
+the discovery came from reading one failing scenario end to end rather than from
+looking at the aggregate. An aggregate cannot tell you that 40% is the wrong
+number; only a specific case can.
+
+The working rule: **when a capable model fails a scenario in a way that looks
+careless, read the scenario before believing the score.** Models do fail
+carelessly - one hallucinated a version number in this very suite - but a
+failure that looks *stupid* is more often a broken expectation than a broken
+model, and the asymmetry is worth acting on.
 
 ## What the eval measured before it was trustworthy
 
