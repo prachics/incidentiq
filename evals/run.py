@@ -93,7 +93,9 @@ class ScenarioResult:
 
 def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
     proposal = state.get("proposal") or {}
-    calls = state.get("tool_calls") or []
+    if not isinstance(proposal, dict):
+        proposal = {}
+    calls = [c for c in (state.get("tool_calls") or []) if isinstance(c, dict)]
     abstained = bool(proposal.get("abstained"))
 
     r = ScenarioResult(
@@ -151,6 +153,8 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
     text = " ".join([
         str(proposal.get("root_cause") or ""),
         str(proposal.get("remediation") or ""),
+        # default=str so an unserialisable value degrades to text rather than
+        # raising: the grader must survive any shape the model produces.
         json.dumps(proposal.get("remediation_arguments") or {}, default=str),
         str(state.get("final_summary") or ""),
     ]).lower()
@@ -166,10 +170,16 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
     # replica lag on order-db was credited with identifying the cause, because
     # it had written "involving the order-db" in passing. Mentioning a service
     # is not diagnosing it.
-    target = (proposal.get("remediation_arguments") or {}).get("service")
-    victims = {v.lower() for v in scenario.victim_services}
-    acted_on_victim = bool(target) and target.lower() in victims \
-        and target.lower() != cause_service
+    # Everything read out of `proposal` comes from a language model, so nothing
+    # about its type is guaranteed. `remediation_arguments["service"]` arrived
+    # as a non-string and crashed the grader mid-run, losing the scenario. A
+    # grader that can be crashed by unexpected model output is a harness bug:
+    # the agent is allowed to produce nonsense, and the harness has to score it.
+    raw_args = proposal.get("remediation_arguments")
+    target = raw_args.get("service") if isinstance(raw_args, dict) else None
+    target = target.lower() if isinstance(target, str) else None
+    victims = {v.lower() for v in scenario.victim_services if isinstance(v, str)}
+    acted_on_victim = bool(target) and target in victims and target != cause_service
     if scenario.kind == "cascading" and (acted_on_victim or not r.identified_cause):
         if acted_on_victim or any(v.lower() in text for v in scenario.victim_services):
             r.identified_cause = False if acted_on_victim else r.identified_cause
@@ -193,6 +203,8 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
 
     # ── Remediation ─────────────────────────────────────────
     proposed_tool = proposal.get("remediation_tool")
+    if not isinstance(proposed_tool, str):
+        proposed_tool = None
     if scenario.acceptable_remediation_tools:
         r.correct_remediation = proposed_tool in scenario.acceptable_remediation_tools
     else:

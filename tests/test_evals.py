@@ -658,3 +658,59 @@ class TestRunComparison:
                              "before", "after")
         assert "proposed None" in md and "blamed the victim" in md
         assert "| 2 | 0 |" in md
+
+
+class TestGraderSurvivesArbitraryModelOutput:
+    """A grader that can be crashed by unexpected model output is a harness bug.
+
+    The agent is allowed to produce nonsense; the harness has to score it. This
+    crashed mid-run on `remediation_arguments["service"]` arriving as a
+    non-string, and the scenario was lost - recorded as a harness error rather
+    than as whatever the agent actually did.
+    """
+
+    def _sc(self):
+        return Scenario(id="X", kind="cascading", query="q",
+                        true_cause_service="order-db",
+                        victim_services=["order-service"],
+                        root_cause_keywords=["replication"],
+                        acceptable_remediation_tools=["restart_service"])
+
+    @pytest.mark.parametrize("args", [
+        {"service": None},
+        {"service": 42},
+        {"service": ["order-service"]},
+        {"service": {"name": "order-service"}},
+        {},
+        None,
+        "not-a-dict",
+        [1, 2, 3],
+    ])
+    def test_odd_remediation_arguments_do_not_crash(self, args):
+        r = _grade(self._sc(), _state(proposal=_proposal(
+            root_cause="something", remediation_arguments=args)))
+        assert isinstance(r.task_success, bool)
+
+    @pytest.mark.parametrize("tool", [None, 42, ["restart_service"], {"n": "x"}])
+    def test_odd_remediation_tool_does_not_crash(self, tool):
+        r = _grade(self._sc(), _state(proposal=_proposal(remediation_tool=tool)))
+        assert isinstance(r.task_success, bool)
+        assert r.correct_remediation is False
+
+    def test_proposal_that_is_not_a_dict_does_not_crash(self):
+        for bad in ("a string", 42, ["a", "list"]):
+            r = _grade(self._sc(), _state(proposal=bad))
+            assert isinstance(r.task_success, bool)
+
+    def test_malformed_tool_call_records_do_not_crash(self):
+        r = _grade(self._sc(), _state(
+            tool_calls=["not a dict", None, {"tool_name": "x", "status": "success"}],
+            proposal=_proposal()))
+        assert r.tool_attempts == 1  # only the well-formed record counts
+
+    def test_unserialisable_remediation_arguments_do_not_crash(self):
+        class Weird:
+            def __repr__(self): return "<weird>"
+        r = _grade(self._sc(), _state(proposal=_proposal(
+            remediation_arguments={"service": Weird()})))
+        assert isinstance(r.task_success, bool)
