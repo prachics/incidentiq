@@ -1,32 +1,33 @@
 - id: SC-SS-001
   kind: single_service
-  query: warehouse-sync is throwing errors and I'm not sure why
-  expected_service: warehouse-sync
-  expected_archetype: cert_expiry
-  expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
-    certificate was still valid, which is why expiry monitoring did not fire.
+  query: redis-cart is throwing errors and I'm not sure why
+  expected_service: redis-cart
+  expected_archetype: cache_node_eviction
+  expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
+    memory, forcing eviction of the entries that actually mattered.
   root_cause_keywords:
-  - certificate
-  - expired
-  - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
-  - certificate
-  - expiry
-  - network
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
+  - memory
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: warehouse-sync
+  true_cause_service: redis-cart
   max_iterations: 6
-  notes: TLS certificate expiry on warehouse-sync
+  notes: Cache node evicting under memory pressure on redis-cart
 - id: SC-SS-002
   kind: single_service
   query: notification-service degraded about an hour ago and hasn't recovered
@@ -62,7 +63,494 @@
   notes: Traffic surge beyond provisioned capacity on notification-service
 - id: SC-SS-003
   kind: single_service
-  query: inventory-service degraded about an hour ago and hasn't recovered
+  query: catalog-service degraded about an hour ago and hasn't recovered
+  expected_service: catalog-service
+  expected_archetype: cache_stampede
+  expected_root_cause: A cache flush during deploy left search-service empty. Every in-flight request
+    missed and recomputed at once rather than the first one populating the entry for the rest.
+  root_cause_keywords:
+  - entries
+  - written
+  - expired
+  - simultaneously
+  - missed
+  - recomputed
+  - concurrently
+  - hammering
+  - backing
+  - thundering
+  - expiry
+  - boundary
+  - cache
+  - stampede
+  - thundering-herd
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: catalog-service
+  max_iterations: 6
+  notes: Cache stampede after eviction on catalog-service
+- id: SC-SS-004
+  kind: single_service
+  query: something changed with user-service and I can't work out what
+  expected_service: user-service
+  expected_archetype: db_pool_exhausted
+  expected_root_cause: All user-db connections were checked out and never returned. A code path added
+    in the previous release failed to close its connection on the error branch, so each failed request
+    permanently leaked one connection from the pool.
+  root_cause_keywords:
+  - connection
+  - exhausted
+  - introduced
+  - earlier
+  - connections
+  - longer
+  - timeout
+  - assumed
+  - normal
+  - concurrency
+  - checked
+  - queued
+  - database
+  - connection-pool
+  - timeout
+  - saturation
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: user-service
+  max_iterations: 6
+  notes: Database connection pool exhausted on user-service
+- id: SC-SS-005
+  kind: single_service
+  query: warehouse-sync looks unhealthy in the dashboard, can you look?
+  expected_service: warehouse-sync
+  expected_archetype: cert_expiry
+  expected_root_cause: The TLS certificate used by warehouse-sync expired. Automated renewal had been
+    disabled during a migration eight months earlier and was never re-enabled, and the expiry monitor
+    was watching the load balancer's certificate rather than this one.
+  root_cause_keywords:
+  - certificate
+  - expired
+  - automated
+  - renewal
+  - disabled
+  - during
+  - migration
+  - months
+  - earlier
+  - expiry
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: warehouse-sync
+  max_iterations: 6
+  notes: TLS certificate expiry on warehouse-sync
+- id: SC-SS-006
+  kind: single_service
+  query: feature-store looks unhealthy in the dashboard, can you look?
+  expected_service: feature-store
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
+    dead tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - volume
+  - reached
+  - segments
+  - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: feature-store
+  max_iterations: 6
+  notes: Disk exhaustion on a datastore on feature-store
+- id: SC-SS-007
+  kind: single_service
+  query: user-db degraded about an hour ago and hasn't recovered
+  expected_service: user-db
+  expected_archetype: replica_lag
+  expected_root_cause: Replication lag on user-db reached 240 seconds. A bulk backfill job saturated the
+    primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
+    traffic load-balanced across replicas therefore returned data up to four minutes old.
+  root_cause_keywords:
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: user-db
+  max_iterations: 6
+  notes: Read replica lag serving stale data on user-db
+- id: SC-SS-008
+  kind: single_service
+  query: elasticsearch-cluster degraded about an hour ago and hasn't recovered
+  expected_service: elasticsearch-cluster
+  expected_archetype: search_shard_unassigned
+  expected_root_cause: "Two primary shards on elasticsearch-cluster were unassigned after a node left\
+    \ the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had\
+    \ crossed the high watermark. Queries silently returned partial results rather than failing."
+  root_cause_keywords:
+  - primary
+  - shards
+  - unassigned
+  - cluster
+  - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: elasticsearch-cluster
+  max_iterations: 6
+  notes: Search cluster shards unassigned on elasticsearch-cluster
+- id: SC-SS-009
+  kind: single_service
+  query: inventory-db looks unhealthy in the dashboard, can you look?
+  expected_service: inventory-db
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in inventory-db, so
+    dead tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - volume
+  - reached
+  - segments
+  - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: inventory-db
+  max_iterations: 6
+  notes: Disk exhaustion on a datastore on inventory-db
+- id: SC-SS-010
+  kind: single_service
+  query: getting paged for feature-store, something's wrong
+  expected_service: feature-store
+  expected_archetype: replica_lag
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
+  root_cause_keywords:
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: feature-store
+  max_iterations: 6
+  notes: Read replica lag serving stale data on feature-store
+- id: SC-SS-011
+  kind: single_service
+  query: something changed with redis-cart and I can't work out what
+  expected_service: redis-cart
+  expected_archetype: cache_node_eviction
+  expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
+    memory, forcing eviction of the entries that actually mattered.
+  root_cause_keywords:
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
+  - memory
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: redis-cart
+  max_iterations: 6
+  notes: Cache node evicting under memory pressure on redis-cart
+- id: SC-SS-012
+  kind: single_service
+  query: customers are complaining about ml-scoring-service
+  expected_service: ml-scoring-service
+  expected_archetype: downstream_timeout_cascade
+  expected_root_cause: feature-store became slow, and ml-scoring-service had no timeout configured on
+    calls to it. Request threads blocked indefinitely waiting on feature-store, saturating ml-scoring-service's
+    pool and making ml-scoring-service appear to be the failure when it was the victim.
+  root_cause_keywords:
+  - became
+  - timeout
+  - configured
+  - threads
+  - blocked
+  - indefinitely
+  - waiting
+  - saturating
+  - making
+  - appear
+  - failure
+  - victim
+  - cascade
+  - timeout
+  - dependency
+  - circuit-breaker
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: ml-scoring-service
+  max_iterations: 6
+  notes: Downstream dependency timeout cascading upstream on ml-scoring-service
+- id: SC-SS-013
+  kind: single_service
+  query: customers are complaining about inventory-service
+  expected_service: inventory-service
+  expected_archetype: db_pool_exhausted
+  expected_root_cause: All inventory-db connections were checked out and never returned. A code path added
+    in the previous release failed to close its connection on the error branch, so each failed request
+    permanently leaked one connection from the pool.
+  root_cause_keywords:
+  - connection
+  - exhausted
+  - introduced
+  - earlier
+  - connections
+  - longer
+  - timeout
+  - assumed
+  - normal
+  - concurrency
+  - checked
+  - queued
+  - database
+  - connection-pool
+  - timeout
+  - saturation
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: inventory-service
+  max_iterations: 6
+  notes: Database connection pool exhausted on inventory-service
+- id: SC-SS-014
+  kind: single_service
+  query: fraud-service degraded about an hour ago and hasn't recovered
+  expected_service: fraud-service
+  expected_archetype: cache_stampede
+  expected_root_cause: "All fraud-db entries were written with the same TTL, so they expired simultaneously.\
+    \ Every request that missed then recomputed the same value concurrently, hammering the backing store\
+    \ \u2014 a thundering herd on each expiry boundary."
+  root_cause_keywords:
+  - entries
+  - written
+  - expired
+  - simultaneously
+  - missed
+  - recomputed
+  - concurrently
+  - hammering
+  - backing
+  - thundering
+  - expiry
+  - boundary
+  - cache
+  - stampede
+  - thundering-herd
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: fraud-service
+  max_iterations: 6
+  notes: Cache stampede after eviction on fraud-service
+- id: SC-SS-015
+  kind: single_service
+  query: recommendation-service is throwing errors and I'm not sure why
+  expected_service: recommendation-service
+  expected_archetype: memory_leak_oom
+  expected_root_cause: A listener registered per request was never unregistered, so each request added
+    a permanently reachable object. Heap grew until the container limit was reached.
+  root_cause_keywords:
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
+  - listener
+  - registered
+  - unregistered
+  - permanently
+  - memory
+  - restart
+  - leak
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: recommendation-service
+  max_iterations: 6
+  notes: Memory leak leading to OOM kills on recommendation-service
+- id: SC-SS-016
+  kind: single_service
+  query: getting paged for inventory-db, something's wrong
+  expected_service: inventory-db
+  expected_archetype: disk_full
+  expected_root_cause: The data volume on inventory-db reached 100%. WAL segments accumulated faster than
+    they were archived because the archive command had been failing silently for nine days, and nothing
+    alerted on archive failure.
+  root_cause_keywords:
+  - volume
+  - reached
+  - segments
+  - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: inventory-db
+  max_iterations: 6
+  notes: Disk exhaustion on a datastore on inventory-db
+- id: SC-SS-017
+  kind: single_service
+  query: alert fired on recommendation-service. what's going on?
+  expected_service: recommendation-service
+  expected_archetype: bad_deploy_regression
+  expected_root_cause: Release v3.12.0 of recommendation-service changed a response field from a string
+    to an object without a compatibility shim. Callers still on the old contract failed to deserialise
+    it, producing 500s for exactly the fraction of traffic on old clients.
+  root_cause_keywords:
+  - release
+  - changed
+  - response
+  - string
+  - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: recommendation-service
+  max_iterations: 6
+  notes: Regression introduced by a deploy on recommendation-service
+- id: SC-SS-018
+  kind: single_service
+  query: something changed with sms-adapter and I can't work out what
+  expected_service: sms-adapter
+  expected_archetype: cert_expiry
+  expected_root_cause: An intermediate CA certificate in sms-adapter's trust chain expired. The leaf certificate
+    was still valid, which is why expiry monitoring did not fire.
+  root_cause_keywords:
+  - certificate
+  - expired
+  - automated
+  - renewal
+  - disabled
+  - during
+  - migration
+  - months
+  - earlier
+  - expiry
+  - monitor
+  - watching
+  - certificate
+  - expiry
+  - network
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: sms-adapter
+  max_iterations: 6
+  notes: TLS certificate expiry on sms-adapter
+- id: SC-SS-019
+  kind: single_service
+  query: getting paged for inventory-service, something's wrong
   expected_service: inventory-service
   expected_archetype: cache_stampede
   expected_root_cause: A cache flush during deploy left warehouse-sync empty. Every in-flight request
@@ -89,73 +577,74 @@
   true_cause_service: inventory-service
   max_iterations: 6
   notes: Cache stampede after eviction on inventory-service
-- id: SC-SS-004
+- id: SC-SS-020
   kind: single_service
-  query: we're seeing failures on search-service, no idea if it's us or downstream
-  expected_service: search-service
-  expected_archetype: search_shard_unassigned
-  expected_root_cause: "Two primary shards on search-service were unassigned after a node left the cluster\
-    \ and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had crossed the\
-    \ high watermark. Queries silently returned partial results rather than failing."
+  query: we're seeing failures on user-service, no idea if it's us or downstream
+  expected_service: user-service
+  expected_archetype: traffic_surge
+  expected_root_cause: A campaign launched without capacity planning notice. user-service was provisioned
+    for typical peak, not six times it.
   root_cause_keywords:
-  - primary
-  - shards
-  - unassigned
-  - cluster
-  - allocation
-  - prevented
-  - reassignment
-  - remaining
-  - crossed
-  - watermark
-  - queries
-  - silently
-  - search
-  - elasticsearch
-  - shards
+  - traffic
+  - exceeded
+  - provisioned
   - capacity
+  - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: search-service
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: user-service
   max_iterations: 6
-  notes: Search cluster shards unassigned on search-service
-- id: SC-SS-005
+  notes: Traffic surge beyond provisioned capacity on user-service
+- id: SC-SS-021
   kind: single_service
-  query: carrier-adapter looks unhealthy in the dashboard, can you look?
-  expected_service: carrier-adapter
-  expected_archetype: cert_expiry
-  expected_root_cause: The TLS certificate used by carrier-adapter expired. Automated renewal had been
-    disabled during a migration eight months earlier and was never re-enabled, and the expiry monitor
-    was watching the load balancer's certificate rather than this one.
+  query: user-db looks unhealthy in the dashboard, can you look?
+  expected_service: user-db
+  expected_archetype: replica_lag
+  expected_root_cause: Replication lag on user-db reached 240 seconds. A bulk backfill job saturated the
+    primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
+    traffic load-balanced across replicas therefore returned data up to four minutes old.
   root_cause_keywords:
-  - certificate
-  - expired
-  - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
-  - certificate
-  - expiry
-  - network
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: carrier-adapter
+  true_cause_service: user-db
   max_iterations: 6
-  notes: TLS certificate expiry on carrier-adapter
-- id: SC-SS-006
+  notes: Read replica lag serving stale data on user-db
+- id: SC-SS-022
   kind: single_service
-  query: email-adapter looks unhealthy in the dashboard, can you look?
-  expected_service: email-adapter
+  query: alert fired on warehouse-sync. what's going on?
+  expected_service: warehouse-sync
   expected_archetype: cert_expiry
-  expected_root_cause: An intermediate CA certificate in email-adapter's trust chain expired. The leaf
+  expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
   - certificate
@@ -176,12 +665,43 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: email-adapter
+  true_cause_service: warehouse-sync
   max_iterations: 6
-  notes: TLS certificate expiry on email-adapter
-- id: SC-SS-007
+  notes: TLS certificate expiry on warehouse-sync
+- id: SC-SS-023
   kind: single_service
-  query: catalog-db degraded about an hour ago and hasn't recovered
+  query: we're seeing failures on inventory-service, no idea if it's us or downstream
+  expected_service: inventory-service
+  expected_archetype: downstream_timeout_cascade
+  expected_root_cause: inventory-db became slow, and inventory-service had no timeout configured on calls
+    to it. Request threads blocked indefinitely waiting on inventory-db, saturating inventory-service's
+    pool and making inventory-service appear to be the failure when it was the victim.
+  root_cause_keywords:
+  - became
+  - timeout
+  - configured
+  - threads
+  - blocked
+  - indefinitely
+  - waiting
+  - saturating
+  - making
+  - appear
+  - failure
+  - victim
+  - cascade
+  - timeout
+  - dependency
+  - circuit-breaker
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  true_cause_service: inventory-service
+  max_iterations: 6
+  notes: Downstream dependency timeout cascading upstream on inventory-service
+- id: SC-SS-024
+  kind: single_service
+  query: we're seeing failures on catalog-db, no idea if it's us or downstream
   expected_service: catalog-db
   expected_archetype: replica_lag
   expected_root_cause: Replication lag on catalog-db reached 240 seconds. A bulk backfill job saturated
@@ -209,288 +729,108 @@
   true_cause_service: catalog-db
   max_iterations: 6
   notes: Read replica lag serving stale data on catalog-db
-- id: SC-SS-008
+- id: SC-SS-025
   kind: single_service
-  query: search-service degraded about an hour ago and hasn't recovered
-  expected_service: search-service
-  expected_archetype: search_shard_unassigned
-  expected_root_cause: A rolling restart proceeded faster than shard recovery, so multiple nodes holding
-    copies of the same shard were down simultaneously.
+  query: customers are complaining about catalog-service
+  expected_service: catalog-service
+  expected_archetype: config_drift
+  expected_root_cause: A config change was applied to two of three replicas of catalog-service and not
+    the third. Requests routed to the stale replica used the old value and failed. The apparent randomness
+    was just load balancing.
   root_cause_keywords:
-  - primary
-  - shards
-  - unassigned
-  - cluster
-  - allocation
-  - prevented
-  - reassignment
-  - remaining
-  - crossed
-  - watermark
-  - queries
-  - silently
-  - search
-  - elasticsearch
-  - shards
-  - capacity
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: search-service
-  max_iterations: 6
-  notes: Search cluster shards unassigned on search-service
-- id: SC-SS-009
-  kind: single_service
-  query: checkout-service looks unhealthy in the dashboard, can you look?
-  expected_service: checkout-service
-  expected_archetype: traffic_surge
-  expected_root_cause: A campaign launched without capacity planning notice. checkout-service was provisioned
-    for typical peak, not six times it.
-  root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
-  - autoscaling
-  - configured
-  - stabilisation
-  - window
-  - reacted
-  - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
-  true_cause_service: checkout-service
-  max_iterations: 6
-  notes: Traffic surge beyond provisioned capacity on checkout-service
-- id: SC-SS-010
-  kind: single_service
-  query: getting paged for stripe-adapter, something's wrong
-  expected_service: stripe-adapter
-  expected_archetype: upstream_rate_limit
-  expected_root_cause: A batch job began running during peak hours after a schedule change, consuming
-    the same rate-limit quota as live customer traffic.
-  root_cause_keywords:
-  - exceeded
-  - during
-  - traffic
-  - backoff
-  - turned
-  - breached
-  - further
-  - harder
-  - system
-  - recover
-  - running
-  - schedule
-  - rate-limit
-  - external
-  - retry
-  - backoff
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: stripe-adapter
-  max_iterations: 6
-  notes: Third-party rate limit exceeded on stripe-adapter
-- id: SC-SS-011
-  kind: single_service
-  query: something changed with warehouse-sync and I can't work out what
-  expected_service: warehouse-sync
-  expected_archetype: cert_expiry
-  expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
-    certificate was still valid, which is why expiry monitoring did not fire.
-  root_cause_keywords:
-  - certificate
-  - expired
-  - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
-  - certificate
-  - expiry
-  - network
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: warehouse-sync
-  max_iterations: 6
-  notes: TLS certificate expiry on warehouse-sync
-- id: SC-SS-012
-  kind: single_service
-  query: customers are complaining about recommendation-service
-  expected_service: recommendation-service
-  expected_archetype: downstream_timeout_cascade
-  expected_root_cause: feature-store became slow, and recommendation-service had no timeout configured
-    on calls to it. Request threads blocked indefinitely waiting on feature-store, saturating recommendation-service's
-    pool and making recommendation-service appear to be the failure when it was the victim.
-  root_cause_keywords:
-  - became
-  - timeout
-  - configured
-  - threads
-  - blocked
-  - indefinitely
-  - waiting
-  - saturating
-  - making
-  - appear
-  - failure
-  - victim
-  - cascade
-  - timeout
-  - dependency
-  - circuit-breaker
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: recommendation-service
-  max_iterations: 6
-  notes: Downstream dependency timeout cascading upstream on recommendation-service
-- id: SC-SS-013
-  kind: single_service
-  query: customers are complaining about checkout-service
-  expected_service: checkout-service
-  expected_archetype: db_pool_exhausted
-  expected_root_cause: All payment-service connections were checked out and never returned. A code path
-    added in the previous release failed to close its connection on the error branch, so each failed request
-    permanently leaked one connection from the pool.
-  root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
-  - assumed
-  - normal
-  - concurrency
-  - checked
-  - queued
-  - database
-  - connection-pool
-  - timeout
-  - saturation
+  - config
+  - change
+  - applied
+  - replicas
+  - routed
+  - replica
+  - failed
+  - apparent
+  - randomness
+  - balancing
+  - environment
+  - variable
+  - config
+  - drift
+  - deploy
+  - consistency
   expected_tools:
   - get_service_logs
   - get_metrics
   acceptable_remediation_tools:
   - restart_service
-  true_cause_service: checkout-service
+  true_cause_service: catalog-service
   max_iterations: 6
-  notes: Database connection pool exhausted on checkout-service
-- id: SC-SS-014
+  notes: Configuration drift between environments on catalog-service
+- id: SC-SS-026
   kind: single_service
-  query: user-service degraded about an hour ago and hasn't recovered
-  expected_service: user-service
-  expected_archetype: cache_stampede
-  expected_root_cause: "All user-db entries were written with the same TTL, so they expired simultaneously.\
-    \ Every request that missed then recomputed the same value concurrently, hammering the backing store\
-    \ \u2014 a thundering herd on each expiry boundary."
+  query: getting paged for redis-sessions, something's wrong
+  expected_service: redis-sessions
+  expected_archetype: cache_node_eviction
+  expected_root_cause: redis-sessions reached its maxmemory limit and the allkeys-lru policy began evicting
+    hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
+    to the memory allocation.
   root_cause_keywords:
-  - entries
-  - written
-  - expired
-  - simultaneously
-  - missed
-  - recomputed
-  - concurrently
-  - hammering
-  - backing
-  - thundering
-  - expiry
-  - boundary
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
   - cache
-  - stampede
-  - thundering-herd
+  - redis
+  - eviction
+  - memory
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: user-service
+  true_cause_service: redis-sessions
   max_iterations: 6
-  notes: Cache stampede after eviction on user-service
-- id: SC-SS-015
+  notes: Cache node evicting under memory pressure on redis-sessions
+- id: SC-SS-027
   kind: single_service
-  query: payment-db is throwing errors and I'm not sure why
-  expected_service: payment-db
-  expected_archetype: disk_full
-  expected_root_cause: Autovacuum had been unable to keep up on the largest table in payment-db, so dead
-    tuples accumulated until the volume filled.
+  query: getting paged for redis-cart, something's wrong
+  expected_service: redis-cart
+  expected_archetype: cache_node_eviction
+  expected_root_cause: redis-cart reached its maxmemory limit and the allkeys-lru policy began evicting
+    hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
+    to the memory allocation.
   root_cause_keywords:
-  - volume
   - reached
-  - segments
-  - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
-  - alerted
-  - database
-  - disk
-  - capacity
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
+  - without
+  - change
+  - cache
+  - redis
+  - eviction
+  - memory
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: payment-db
+  true_cause_service: redis-cart
   max_iterations: 6
-  notes: Disk exhaustion on a datastore on payment-db
-- id: SC-SS-016
+  notes: Cache node evicting under memory pressure on redis-cart
+- id: SC-SS-028
   kind: single_service
-  query: getting paged for shipping-db, something's wrong
-  expected_service: shipping-db
-  expected_archetype: disk_full
-  expected_root_cause: The data volume on shipping-db reached 100%. WAL segments accumulated faster than
-    they were archived because the archive command had been failing silently for nine days, and nothing
-    alerted on archive failure.
-  root_cause_keywords:
-  - volume
-  - reached
-  - segments
-  - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
-  - alerted
-  - database
-  - disk
-  - capacity
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: shipping-db
-  max_iterations: 6
-  notes: Disk exhaustion on a datastore on shipping-db
-- id: SC-SS-017
-  kind: single_service
-  query: alert fired on order-db. what's going on?
-  expected_service: order-db
+  query: getting paged for catalog-db, something's wrong
+  expected_service: catalog-db
   expected_archetype: replica_lag
-  expected_root_cause: Replication lag on order-db reached 240 seconds. A bulk backfill job saturated
-    the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
-    traffic load-balanced across replicas therefore returned data up to four minutes old.
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
   - replication
   - reached
@@ -510,75 +850,43 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: order-db
+  true_cause_service: catalog-db
   max_iterations: 6
-  notes: Read replica lag serving stale data on order-db
-- id: SC-SS-018
+  notes: Read replica lag serving stale data on catalog-db
+- id: SC-SS-029
   kind: single_service
-  query: checkout-service is throwing errors and I'm not sure why
-  expected_service: checkout-service
-  expected_archetype: bad_deploy_regression
-  expected_root_cause: Release v3.12.0 introduced an unguarded null dereference on a rarely-populated
-    optional field. Requests that happened to include it hit the exception path.
+  query: alert fired on redis-cart. what's going on?
+  expected_service: redis-cart
+  expected_archetype: cache_node_eviction
+  expected_root_cause: redis-cart reached its maxmemory limit and the allkeys-lru policy began evicting
+    hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
+    to the memory allocation.
   root_cause_keywords:
-  - release
-  - changed
-  - response
-  - string
-  - object
+  - reached
+  - maxmemory
+  - policy
+  - evicting
+  - pattern
+  - introduced
+  - upstream
+  - roughly
+  - doubled
+  - working
   - without
-  - compatibility
-  - callers
-  - contract
-  - failed
-  - deserialise
-  - producing
-  - deploy
-  - regression
-  - rollback
-  - release
+  - change
+  - cache
+  - redis
+  - eviction
+  - memory
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - rollback_deploy
-  true_cause_service: checkout-service
+  true_cause_service: redis-cart
   max_iterations: 6
-  notes: Regression introduced by a deploy on checkout-service
-- id: SC-SS-019
+  notes: Cache node evicting under memory pressure on redis-cart
+- id: SC-SS-030
   kind: single_service
-  query: stripe-adapter looks unhealthy in the dashboard, can you look?
-  expected_service: stripe-adapter
-  expected_archetype: upstream_rate_limit
-  expected_root_cause: The provider's rate limit was exceeded during peak traffic. A retry loop with no
-    backoff turned each rate-limited request into four, so the limit was breached further the harder the
-    system tried to recover.
-  root_cause_keywords:
-  - exceeded
-  - during
-  - traffic
-  - backoff
-  - turned
-  - breached
-  - further
-  - harder
-  - system
-  - recover
-  - running
-  - schedule
-  - rate-limit
-  - external
-  - retry
-  - backoff
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: stripe-adapter
-  max_iterations: 6
-  notes: Third-party rate limit exceeded on stripe-adapter
-- id: SC-SS-020
-  kind: single_service
-  query: kafka-events degraded about an hour ago and hasn't recovered
+  query: getting paged for kafka-events, something's wrong
   expected_service: kafka-events
   expected_archetype: broker_partition_offline
   expected_root_cause: Disk pressure on one kafka-events broker caused it to drop out of the ISR for its
@@ -608,327 +916,43 @@
   true_cause_service: kafka-events
   max_iterations: 6
   notes: Broker partition offline on kafka-events
-- id: SC-SS-021
-  kind: single_service
-  query: we're seeing failures on payment-service, no idea if it's us or downstream
-  expected_service: payment-service
-  expected_archetype: bad_deploy_regression
-  expected_root_cause: Release v3.12.0 of payment-service changed a response field from a string to an
-    object without a compatibility shim. Callers still on the old contract failed to deserialise it, producing
-    500s for exactly the fraction of traffic on old clients.
-  root_cause_keywords:
-  - release
-  - changed
-  - response
-  - string
-  - object
-  - without
-  - compatibility
-  - callers
-  - contract
-  - failed
-  - deserialise
-  - producing
-  - deploy
-  - regression
-  - rollback
-  - release
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - rollback_deploy
-  true_cause_service: payment-service
-  max_iterations: 6
-  notes: Regression introduced by a deploy on payment-service
-- id: SC-SS-022
-  kind: single_service
-  query: customers are complaining about elasticsearch-cluster
-  expected_service: elasticsearch-cluster
-  expected_archetype: search_shard_unassigned
-  expected_root_cause: A rolling restart proceeded faster than shard recovery, so multiple nodes holding
-    copies of the same shard were down simultaneously.
-  root_cause_keywords:
-  - primary
-  - shards
-  - unassigned
-  - cluster
-  - allocation
-  - prevented
-  - reassignment
-  - remaining
-  - crossed
-  - watermark
-  - queries
-  - silently
-  - search
-  - elasticsearch
-  - shards
-  - capacity
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: elasticsearch-cluster
-  max_iterations: 6
-  notes: Search cluster shards unassigned on elasticsearch-cluster
-- id: SC-SS-023
-  kind: single_service
-  query: fraud-service degraded about an hour ago and hasn't recovered
-  expected_service: fraud-service
-  expected_archetype: bad_deploy_regression
-  expected_root_cause: Release v3.12.0 introduced an unguarded null dereference on a rarely-populated
-    optional field. Requests that happened to include it hit the exception path.
-  root_cause_keywords:
-  - release
-  - changed
-  - response
-  - string
-  - object
-  - without
-  - compatibility
-  - callers
-  - contract
-  - failed
-  - deserialise
-  - producing
-  - deploy
-  - regression
-  - rollback
-  - release
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - rollback_deploy
-  true_cause_service: fraud-service
-  max_iterations: 6
-  notes: Regression introduced by a deploy on fraud-service
-- id: SC-SS-024
-  kind: single_service
-  query: getting paged for notification-service, something's wrong
-  expected_service: notification-service
-  expected_archetype: config_drift
-  expected_root_cause: An environment variable was set in the deployment manifest but absent from the
-    canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
-  root_cause_keywords:
-  - config
-  - change
-  - applied
-  - replicas
-  - routed
-  - replica
-  - failed
-  - apparent
-  - randomness
-  - balancing
-  - environment
-  - variable
-  - config
-  - drift
-  - deploy
-  - consistency
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - restart_service
-  true_cause_service: notification-service
-  max_iterations: 6
-  notes: Configuration drift between environments on notification-service
-- id: SC-SS-025
-  kind: single_service
-  query: customers are complaining about payment-service
-  expected_service: payment-service
-  expected_archetype: downstream_timeout_cascade
-  expected_root_cause: payment-db became slow, and payment-service had no timeout configured on calls
-    to it. Request threads blocked indefinitely waiting on payment-db, saturating payment-service's pool
-    and making payment-service appear to be the failure when it was the victim.
-  root_cause_keywords:
-  - became
-  - timeout
-  - configured
-  - threads
-  - blocked
-  - indefinitely
-  - waiting
-  - saturating
-  - making
-  - appear
-  - failure
-  - victim
-  - cascade
-  - timeout
-  - dependency
-  - circuit-breaker
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: payment-service
-  max_iterations: 6
-  notes: Downstream dependency timeout cascading upstream on payment-service
-- id: SC-SS-026
-  kind: single_service
-  query: customers are complaining about cart-service
-  expected_service: cart-service
-  expected_archetype: traffic_surge
-  expected_root_cause: A campaign launched without capacity planning notice. cart-service was provisioned
-    for typical peak, not six times it.
-  root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
-  - autoscaling
-  - configured
-  - stabilisation
-  - window
-  - reacted
-  - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
-  true_cause_service: cart-service
-  max_iterations: 6
-  notes: Traffic surge beyond provisioned capacity on cart-service
-- id: SC-SS-027
-  kind: single_service
-  query: we're seeing failures on order-service, no idea if it's us or downstream
-  expected_service: order-service
-  expected_archetype: thread_pool_saturation
-  expected_root_cause: A deadlock between two locks acquired in inconsistent order gradually consumed
-    the pool as more requests hit the same path.
-  root_cause_keywords:
-  - thread
-  - occupied
-  - threads
-  - blocked
-  - synchronous
-  - timeout
-  - waiting
-  - rather
-  - running
-  - stayed
-  - silent
-  - deadlock
-  - threads
-  - saturation
-  - deadlock
-  - runtime
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - restart_service
-  true_cause_service: order-service
-  max_iterations: 6
-  notes: Thread pool saturation on order-service
-- id: SC-SS-028
-  kind: single_service
-  query: order-service is throwing errors and I'm not sure why
-  expected_service: order-service
-  expected_archetype: traffic_surge
-  expected_root_cause: A campaign launched without capacity planning notice. order-service was provisioned
-    for typical peak, not six times it.
-  root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
-  - autoscaling
-  - configured
-  - stabilisation
-  - window
-  - reacted
-  - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
-  true_cause_service: order-service
-  max_iterations: 6
-  notes: Traffic surge beyond provisioned capacity on order-service
-- id: SC-SS-029
-  kind: single_service
-  query: getting paged for redis-sessions, something's wrong
-  expected_service: redis-sessions
-  expected_archetype: cache_node_eviction
-  expected_root_cause: A single oversized key on redis-sessions consumed a disproportionate share of the
-    node's memory, forcing eviction of the entries that actually mattered.
-  root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
-  - doubled
-  - working
-  - without
-  - change
-  - cache
-  - redis
-  - eviction
-  - memory
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  true_cause_service: redis-sessions
-  max_iterations: 6
-  notes: Cache node evicting under memory pressure on redis-sessions
-- id: SC-SS-030
-  kind: single_service
-  query: inventory-service degraded about an hour ago and hasn't recovered
-  expected_service: inventory-service
-  expected_archetype: config_drift
-  expected_root_cause: A config change was applied to two of three replicas of inventory-service and not
-    the third. Requests routed to the stale replica used the old value and failed. The apparent randomness
-    was just load balancing.
-  root_cause_keywords:
-  - config
-  - change
-  - applied
-  - replicas
-  - routed
-  - replica
-  - failed
-  - apparent
-  - randomness
-  - balancing
-  - environment
-  - variable
-  - config
-  - drift
-  - deploy
-  - consistency
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - restart_service
-  true_cause_service: inventory-service
-  max_iterations: 6
-  notes: Configuration drift between environments on inventory-service
 - id: SC-SS-031
   kind: single_service
-  query: getting paged for inventory-service, something's wrong
-  expected_service: inventory-service
+  query: kafka-events degraded about an hour ago and hasn't recovered
+  expected_service: kafka-events
+  expected_archetype: broker_partition_offline
+  expected_root_cause: A broker in the kafka-events cluster went offline and the partitions it led had
+    no in-sync replica to take over, because min.insync.replicas had been lowered during an earlier incident
+    and never restored. Those partitions became unavailable for writes.
+  root_cause_keywords:
+  - broker
+  - cluster
+  - offline
+  - partitions
+  - replica
+  - lowered
+  - during
+  - earlier
+  - incident
+  - restored
+  - became
+  - unavailable
+  - kafka
+  - queue
+  - replication
+  - broker
+  expected_tools:
+  - get_service_logs
+  - get_metrics
+  acceptable_remediation_tools:
+  - restart_service
+  true_cause_service: kafka-events
+  max_iterations: 6
+  notes: Broker partition offline on kafka-events
+- id: SC-SS-032
+  kind: single_service
+  query: getting paged for catalog-service, something's wrong
+  expected_service: catalog-service
   expected_archetype: memory_leak_oom
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
@@ -953,15 +977,15 @@
   - get_metrics
   acceptable_remediation_tools:
   - rollback_deploy
-  true_cause_service: inventory-service
+  true_cause_service: catalog-service
   max_iterations: 6
-  notes: Memory leak leading to OOM kills on inventory-service
-- id: SC-SS-032
+  notes: Memory leak leading to OOM kills on catalog-service
+- id: SC-SS-033
   kind: single_service
-  query: alert fired on cart-service. what's going on?
-  expected_service: cart-service
+  query: alert fired on catalog-service. what's going on?
+  expected_service: catalog-service
   expected_archetype: traffic_surge
-  expected_root_cause: A campaign launched without capacity planning notice. cart-service was provisioned
+  expected_root_cause: A campaign launched without capacity planning notice. catalog-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
   - traffic
@@ -985,15 +1009,15 @@
   - get_metrics
   acceptable_remediation_tools:
   - scale_service
-  true_cause_service: cart-service
+  true_cause_service: catalog-service
   max_iterations: 6
-  notes: Traffic surge beyond provisioned capacity on cart-service
-- id: SC-SS-033
+  notes: Traffic surge beyond provisioned capacity on catalog-service
+- id: SC-SS-034
   kind: single_service
-  query: user-db looks unhealthy in the dashboard, can you look?
-  expected_service: user-db
+  query: payment-db looks unhealthy in the dashboard, can you look?
+  expected_service: payment-db
   expected_archetype: disk_full
-  expected_root_cause: Autovacuum had been unable to keep up on the largest table in user-db, so dead
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in payment-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
   - volume
@@ -1014,13 +1038,13 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: user-db
+  true_cause_service: payment-db
   max_iterations: 6
-  notes: Disk exhaustion on a datastore on user-db
-- id: SC-SS-034
+  notes: Disk exhaustion on a datastore on payment-db
+- id: SC-SS-035
   kind: single_service
-  query: getting paged for feature-store, something's wrong
-  expected_service: feature-store
+  query: getting paged for inventory-db, something's wrong
+  expected_service: inventory-db
   expected_archetype: replica_lag
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
@@ -1043,47 +1067,46 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: feature-store
+  true_cause_service: inventory-db
   max_iterations: 6
-  notes: Read replica lag serving stale data on feature-store
-- id: SC-SS-035
+  notes: Read replica lag serving stale data on inventory-db
+- id: SC-SS-036
   kind: single_service
-  query: we're seeing failures on redis-cart, no idea if it's us or downstream
-  expected_service: redis-cart
-  expected_archetype: cache_node_eviction
-  expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
-    memory, forcing eviction of the entries that actually mattered.
+  query: we're seeing failures on catalog-db, no idea if it's us or downstream
+  expected_service: catalog-db
+  expected_archetype: replica_lag
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
+  - replication
   - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
-  - doubled
-  - working
-  - without
-  - change
-  - cache
-  - redis
-  - eviction
-  - memory
+  - seconds
+  - backfill
+  - saturated
+  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: redis-cart
+  true_cause_service: catalog-db
   max_iterations: 6
-  notes: Cache node evicting under memory pressure on redis-cart
-- id: SC-SS-036
+  notes: Read replica lag serving stale data on catalog-db
+- id: SC-SS-037
   kind: single_service
-  query: alert fired on catalog-service. what's going on?
-  expected_service: catalog-service
+  query: alert fired on user-service. what's going on?
+  expected_service: user-service
   expected_archetype: downstream_timeout_cascade
-  expected_root_cause: catalog-db became slow, and catalog-service had no timeout configured on calls
-    to it. Request threads blocked indefinitely waiting on catalog-db, saturating catalog-service's pool
-    and making catalog-service appear to be the failure when it was the victim.
+  expected_root_cause: user-db became slow, and user-service had no timeout configured on calls to it.
+    Request threads blocked indefinitely waiting on user-db, saturating user-service's pool and making
+    user-service appear to be the failure when it was the victim.
   root_cause_keywords:
   - became
   - timeout
@@ -1104,13 +1127,13 @@
   expected_tools:
   - get_service_logs
   - get_metrics
-  true_cause_service: catalog-service
+  true_cause_service: user-service
   max_iterations: 6
-  notes: Downstream dependency timeout cascading upstream on catalog-service
-- id: SC-SS-037
+  notes: Downstream dependency timeout cascading upstream on user-service
+- id: SC-SS-038
   kind: single_service
-  query: customers are complaining about auth-service
-  expected_service: auth-service
+  query: customers are complaining about inventory-service
+  expected_service: inventory-service
   expected_archetype: bad_deploy_regression
   expected_root_cause: Release v3.12.0 introduced an unguarded null dereference on a rarely-populated
     optional field. Requests that happened to include it hit the exception path.
@@ -1136,49 +1159,17 @@
   - get_metrics
   acceptable_remediation_tools:
   - rollback_deploy
-  true_cause_service: auth-service
+  true_cause_service: inventory-service
   max_iterations: 6
-  notes: Regression introduced by a deploy on auth-service
-- id: SC-SS-038
-  kind: single_service
-  query: order-service is throwing errors and I'm not sure why
-  expected_service: order-service
-  expected_archetype: traffic_surge
-  expected_root_cause: Traffic exceeded order-service's provisioned capacity. Autoscaling was configured
-    on CPU with a five-minute stabilisation window, so it reacted far too slowly for a spike that arrived
-    in under a minute.
-  root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
-  - autoscaling
-  - configured
-  - stabilisation
-  - window
-  - reacted
-  - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
-  expected_tools:
-  - get_service_logs
-  - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
-  true_cause_service: order-service
-  max_iterations: 6
-  notes: Traffic surge beyond provisioned capacity on order-service
+  notes: Regression introduced by a deploy on inventory-service
 - id: SC-SS-039
   kind: single_service
-  query: we're seeing failures on redis-cart, no idea if it's us or downstream
+  query: redis-cart is throwing errors and I'm not sure why
   expected_service: redis-cart
   expected_archetype: cache_node_eviction
-  expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
-    memory, forcing eviction of the entries that actually mattered.
+  expected_root_cause: redis-cart reached its maxmemory limit and the allkeys-lru policy began evicting
+    hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
+    to the memory allocation.
   root_cause_keywords:
   - reached
   - maxmemory
@@ -1204,33 +1195,30 @@
   notes: Cache node evicting under memory pressure on redis-cart
 - id: SC-SS-040
   kind: single_service
-  query: customers are complaining about notification-service
-  expected_service: notification-service
-  expected_archetype: consumer_lag
-  expected_root_cause: notification-service consumers could not keep pace with producer throughput on
-    email-adapter. A per-message synchronous call added in the last release roughly tripled per-message
-    processing time, pushing consumption below the production rate.
+  query: we're seeing failures on catalog-db, no idea if it's us or downstream
+  expected_service: catalog-db
+  expected_archetype: replica_lag
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - consumers
-  - producer
+  - replication
+  - reached
+  - seconds
+  - backfill
+  - saturated
   - throughput
-  - synchronous
-  - release
-  - roughly
-  - tripled
-  - processing
-  - pushing
-  - consumption
-  - production
-  - consumer
-  - kafka
-  - queue
-  - throughput
+  - replicas
+  - produced
+  - traffic
+  - across
+  - therefore
+  - returned
+  - database
+  - replication
+  - consistency
   expected_tools:
   - get_service_logs
   - get_metrics
-  acceptable_remediation_tools:
-  - scale_service
-  true_cause_service: notification-service
+  true_cause_service: catalog-db
   max_iterations: 6
-  notes: Event consumer falling behind on notification-service
+  notes: Read replica lag serving stale data on catalog-db
