@@ -39,6 +39,31 @@ from evals.scenario import Scenario, breakdown, save_scenarios  # noqa: E402
 
 SEED = 31337
 OUT_DIR = REPO_ROOT / "evals" / "scenarios"
+MANIFEST = REPO_ROOT / "seeds" / "live_situations.json"
+
+
+def _live_situation_services() -> set[str]:
+    """Services the base corpus already has a firing incident on.
+
+    Scenarios avoid these. A scenario plants the evidence its own failure would
+    leave; planting it on a service that already carries a different archetype's
+    signatures produces logs describing two concurrent incidents, and the
+    scenario's single expected root cause is then not the only correct answer.
+
+    The agent found this before the tests did. Asked about shipping-service -
+    which is both a live situation and, after planting, a bad_deploy_regression
+    scenario - it reported "multiple error signatures, including connection pool
+    exhaustion and NullPointerException, but no clear primary cause" and
+    abstained. That is an accurate reading of the logs it was given.
+
+    Concurrent incidents are realistic, and worth testing deliberately one day.
+    They are not what these scenarios claim to test.
+    """
+    import json
+    if not MANIFEST.exists():
+        return set()
+    manifest = json.loads(MANIFEST.read_text())
+    return {s["service"] for s in manifest.get("live_situations", [])}
 
 # How a tired on-call engineer actually writes. Deliberately vague: naming the
 # failure mode in the query would make the task trivial and would not resemble
@@ -125,6 +150,13 @@ def _keywords(text: str, n: int = 5) -> list[str]:
     return out
 
 
+EXCLUDED = _live_situation_services()
+
+
+def _usable(svc: C.Service) -> bool:
+    return svc.name not in EXCLUDED and bool(_eligible(svc))
+
+
 def _eligible(svc: C.Service) -> list[A.Archetype]:
     out = []
     for a in A.for_service(svc.kind, svc.language):
@@ -152,7 +184,7 @@ def _pick_dep(r: random.Random, svc: C.Service, arch: A.Archetype) -> str:
 
 
 def gen_single_service(r: random.Random, n: int) -> list[Scenario]:
-    candidates = [s for s in C.SERVICES if _eligible(s)]
+    candidates = [s for s in C.SERVICES if _usable(s)]
     out = []
     for i in range(n):
         svc = r.choice(candidates)
@@ -181,9 +213,11 @@ def gen_cascading(r: random.Random, n: int) -> list[Scenario]:
     """
     pairs = []
     for svc in C.SERVICES:
-        if not _eligible(svc):
+        if not _usable(svc):
             continue
-        callers = C.dependents_of(svc.name)
+        # Victims must be clean too, or the cascade symptoms are indistinguishable
+        # from that victim's own unrelated incident.
+        callers = [c for c in C.dependents_of(svc.name) if c not in EXCLUDED]
         if callers:
             pairs.append((svc, callers))
     out = []
@@ -201,7 +235,12 @@ def gen_cascading(r: random.Random, n: int) -> list[Scenario]:
             expected_tools=["get_service_dependencies", "get_service_logs"],
             acceptable_remediation_tools=[arch.remediation_tool] if arch.remediation_tool else [],
             true_cause_service=cause_svc.name,
-            victim_services=[victim] + C.upstream_chain(victim, depth=1)[:2],
+            # The upstream chain needs the same filter as the victim itself: a
+            # service further up with its own firing incident makes the cascade
+            # symptoms indistinguishable from that incident.
+            victim_services=[victim] + [
+                c for c in C.upstream_chain(victim, depth=1) if c not in EXCLUDED
+            ][:2],
             max_iterations=8,
             notes=f"{victim} is a victim; cause is {arch.name} on {cause_svc.name}",
         ))
@@ -237,7 +276,7 @@ def gen_approval_required(r: random.Random, n: int) -> list[Scenario]:
     likely to be broken.
     """
     candidates = [
-        (s, a) for s in C.SERVICES for a in _eligible(s) if a.remediation_tool
+        (s, a) for s in C.SERVICES if _usable(s) for a in _eligible(s) if a.remediation_tool
     ]
     out = []
     for i in range(n):
@@ -261,7 +300,7 @@ def gen_approval_required(r: random.Random, n: int) -> list[Scenario]:
 
 def gen_tool_failure(r: random.Random, n: int) -> list[Scenario]:
     """Failures injected at a high rate. The agent must recover, not give up."""
-    candidates = [s for s in C.SERVICES if _eligible(s)]
+    candidates = [s for s in C.SERVICES if _usable(s)]
     out = []
     for i in range(n):
         svc = r.choice(candidates)

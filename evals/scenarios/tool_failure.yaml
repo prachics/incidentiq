@@ -1,203 +1,43 @@
 - id: SC-TF-001
   kind: tool_failure
-  query: we're seeing failures on elasticsearch-cluster, no idea if it's us or downstream
-  expected_service: elasticsearch-cluster
-  expected_archetype: search_shard_unassigned
-  expected_root_cause: "Two primary shards on elasticsearch-cluster were unassigned after a node left\
-    \ the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had\
-    \ crossed the high watermark. Queries silently returned partial results rather than failing."
+  query: we're seeing failures on user-service, no idea if it's us or downstream
+  expected_service: user-service
+  expected_archetype: downstream_timeout_cascade
+  expected_root_cause: user-db became slow, and user-service had no timeout configured on calls to it.
+    Request threads blocked indefinitely waiting on user-db, saturating user-service's pool and making
+    user-service appear to be the failure when it was the victim.
   root_cause_keywords:
-  - primary
-  - shards
-  - unassigned
-  - cluster
-  - allocation
-  - prevented
-  - reassignment
-  - remaining
-  - crossed
-  - watermark
-  - queries
-  - silently
-  - search
-  - elasticsearch
-  - shards
-  - capacity
-  expected_tools:
-  - get_service_logs
-  true_cause_service: elasticsearch-cluster
-  inject_failures: true
-  failure_rate: 0.35
-  max_iterations: 8
-  notes: Search cluster shards unassigned on elasticsearch-cluster, with 35% tool failure injection
-- id: SC-TF-002
-  kind: tool_failure
-  query: alert fired on kafka-events. what's going on?
-  expected_service: kafka-events
-  expected_archetype: broker_partition_offline
-  expected_root_cause: A broker in the kafka-events cluster went offline and the partitions it led had
-    no in-sync replica to take over, because min.insync.replicas had been lowered during an earlier incident
-    and never restored. Those partitions became unavailable for writes.
-  root_cause_keywords:
-  - broker
-  - cluster
-  - offline
-  - partitions
-  - replica
-  - lowered
-  - during
-  - earlier
-  - incident
-  - restored
   - became
-  - unavailable
-  - kafka
-  - queue
-  - replication
-  - broker
-  expected_tools:
-  - get_service_logs
-  acceptable_remediation_tools:
-  - restart_service
-  true_cause_service: kafka-events
-  inject_failures: true
-  failure_rate: 0.35
-  max_iterations: 8
-  notes: Broker partition offline on kafka-events, with 35% tool failure injection
-- id: SC-TF-003
-  kind: tool_failure
-  query: customers are complaining about carrier-adapter
-  expected_service: carrier-adapter
-  expected_archetype: cert_expiry
-  expected_root_cause: The TLS certificate used by carrier-adapter expired. Automated renewal had been
-    disabled during a migration eight months earlier and was never re-enabled, and the expiry monitor
-    was watching the load balancer's certificate rather than this one.
-  root_cause_keywords:
-  - certificate
-  - expired
-  - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
-  - certificate
-  - expiry
-  - network
-  expected_tools:
-  - get_service_logs
-  true_cause_service: carrier-adapter
-  inject_failures: true
-  failure_rate: 0.35
-  max_iterations: 8
-  notes: TLS certificate expiry on carrier-adapter, with 35% tool failure injection
-- id: SC-TF-004
-  kind: tool_failure
-  query: feature-store degraded about an hour ago and hasn't recovered
-  expected_service: feature-store
-  expected_archetype: disk_full
-  expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
-    dead tuples accumulated until the volume filled.
-  root_cause_keywords:
-  - volume
-  - reached
-  - segments
-  - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
-  - alerted
-  - database
-  - disk
-  - capacity
-  expected_tools:
-  - get_service_logs
-  true_cause_service: feature-store
-  inject_failures: true
-  failure_rate: 0.35
-  max_iterations: 8
-  notes: Disk exhaustion on a datastore on feature-store, with 35% tool failure injection
-- id: SC-TF-005
-  kind: tool_failure
-  query: order-service degraded about an hour ago and hasn't recovered
-  expected_service: order-service
-  expected_archetype: thread_pool_saturation
-  expected_root_cause: The request thread pool in order-service was fully occupied by threads blocked
-    on a synchronous call, with no timeout. Because the threads were waiting rather than running, CPU
-    stayed low and every CPU-based alert stayed silent.
-  root_cause_keywords:
-  - thread
-  - occupied
+  - timeout
+  - configured
   - threads
   - blocked
-  - synchronous
-  - timeout
+  - indefinitely
   - waiting
-  - rather
-  - running
-  - stayed
-  - silent
-  - deadlock
-  - threads
-  - saturation
-  - deadlock
-  - runtime
+  - saturating
+  - making
+  - appear
+  - failure
+  - victim
+  - cascade
+  - timeout
+  - dependency
+  - circuit-breaker
   expected_tools:
   - get_service_logs
-  acceptable_remediation_tools:
-  - restart_service
-  true_cause_service: order-service
+  true_cause_service: user-service
   inject_failures: true
   failure_rate: 0.35
   max_iterations: 8
-  notes: Thread pool saturation on order-service, with 35% tool failure injection
-- id: SC-TF-006
+  notes: Downstream dependency timeout cascading upstream on user-service, with 35% tool failure injection
+- id: SC-TF-002
   kind: tool_failure
-  query: we're seeing failures on warehouse-sync, no idea if it's us or downstream
-  expected_service: warehouse-sync
-  expected_archetype: upstream_rate_limit
-  expected_root_cause: The provider's rate limit was exceeded during peak traffic. A retry loop with no
-    backoff turned each rate-limited request into four, so the limit was breached further the harder the
-    system tried to recover.
-  root_cause_keywords:
-  - exceeded
-  - during
-  - traffic
-  - backoff
-  - turned
-  - breached
-  - further
-  - harder
-  - system
-  - recover
-  - running
-  - schedule
-  - rate-limit
-  - external
-  - retry
-  - backoff
-  expected_tools:
-  - get_service_logs
-  true_cause_service: warehouse-sync
-  inject_failures: true
-  failure_rate: 0.35
-  max_iterations: 8
-  notes: Third-party rate limit exceeded on warehouse-sync, with 35% tool failure injection
-- id: SC-TF-007
-  kind: tool_failure
-  query: something changed with feature-store and I can't work out what
-  expected_service: feature-store
+  query: alert fired on fraud-db. what's going on?
+  expected_service: fraud-db
   expected_archetype: disk_full
-  expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
-    dead tuples accumulated until the volume filled.
+  expected_root_cause: The data volume on fraud-db reached 100%. WAL segments accumulated faster than
+    they were archived because the archive command had been failing silently for nine days, and nothing
+    alerted on archive failure.
   root_cause_keywords:
   - volume
   - reached
@@ -216,14 +56,14 @@
   - capacity
   expected_tools:
   - get_service_logs
-  true_cause_service: feature-store
+  true_cause_service: fraud-db
   inject_failures: true
   failure_rate: 0.35
   max_iterations: 8
-  notes: Disk exhaustion on a datastore on feature-store, with 35% tool failure injection
-- id: SC-TF-008
+  notes: Disk exhaustion on a datastore on fraud-db, with 35% tool failure injection
+- id: SC-TF-003
   kind: tool_failure
-  query: elasticsearch-cluster looks unhealthy in the dashboard, can you look?
+  query: customers are complaining about elasticsearch-cluster
   expected_service: elasticsearch-cluster
   expected_archetype: search_shard_unassigned
   expected_root_cause: "Two primary shards on elasticsearch-cluster were unassigned after a node left\
@@ -253,14 +93,140 @@
   failure_rate: 0.35
   max_iterations: 8
   notes: Search cluster shards unassigned on elasticsearch-cluster, with 35% tool failure injection
-- id: SC-TF-009
+- id: SC-TF-004
   kind: tool_failure
-  query: something changed with payment-db and I can't work out what
-  expected_service: payment-db
+  query: ml-scoring-service looks unhealthy in the dashboard, can you look?
+  expected_service: ml-scoring-service
+  expected_archetype: traffic_surge
+  expected_root_cause: A campaign launched without capacity planning notice. ml-scoring-service was provisioned
+    for typical peak, not six times it.
+  root_cause_keywords:
+  - traffic
+  - exceeded
+  - provisioned
+  - capacity
+  - autoscaling
+  - configured
+  - stabilisation
+  - window
+  - reacted
+  - slowly
+  - arrived
+  - minute
+  - capacity
+  - autoscaling
+  - traffic
+  - saturation
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - scale_service
+  true_cause_service: ml-scoring-service
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Traffic surge beyond provisioned capacity on ml-scoring-service, with 35% tool failure injection
+- id: SC-TF-005
+  kind: tool_failure
+  query: getting paged for elasticsearch-cluster, something's wrong
+  expected_service: elasticsearch-cluster
+  expected_archetype: search_shard_unassigned
+  expected_root_cause: A rolling restart proceeded faster than shard recovery, so multiple nodes holding
+    copies of the same shard were down simultaneously.
+  root_cause_keywords:
+  - primary
+  - shards
+  - unassigned
+  - cluster
+  - allocation
+  - prevented
+  - reassignment
+  - remaining
+  - crossed
+  - watermark
+  - queries
+  - silently
+  - search
+  - elasticsearch
+  - shards
+  - capacity
+  expected_tools:
+  - get_service_logs
+  true_cause_service: elasticsearch-cluster
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Search cluster shards unassigned on elasticsearch-cluster, with 35% tool failure injection
+- id: SC-TF-006
+  kind: tool_failure
+  query: something changed with catalog-db and I can't work out what
+  expected_service: catalog-db
+  expected_archetype: disk_full
+  expected_root_cause: Autovacuum had been unable to keep up on the largest table in catalog-db, so dead
+    tuples accumulated until the volume filled.
+  root_cause_keywords:
+  - volume
+  - reached
+  - segments
+  - accumulated
+  - faster
+  - archived
+  - archive
+  - command
+  - failing
+  - silently
+  - nothing
+  - alerted
+  - database
+  - disk
+  - capacity
+  expected_tools:
+  - get_service_logs
+  true_cause_service: catalog-db
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Disk exhaustion on a datastore on catalog-db, with 35% tool failure injection
+- id: SC-TF-007
+  kind: tool_failure
+  query: fraud-service is throwing errors and I'm not sure why
+  expected_service: fraud-service
+  expected_archetype: bad_deploy_regression
+  expected_root_cause: Release v3.12.0 introduced an unguarded null dereference on a rarely-populated
+    optional field. Requests that happened to include it hit the exception path.
+  root_cause_keywords:
+  - release
+  - changed
+  - response
+  - string
+  - object
+  - without
+  - compatibility
+  - callers
+  - contract
+  - failed
+  - deserialise
+  - producing
+  - deploy
+  - regression
+  - rollback
+  - release
+  expected_tools:
+  - get_service_logs
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: fraud-service
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Regression introduced by a deploy on fraud-service, with 35% tool failure injection
+- id: SC-TF-008
+  kind: tool_failure
+  query: catalog-db looks unhealthy in the dashboard, can you look?
+  expected_service: catalog-db
   expected_archetype: replica_lag
-  expected_root_cause: Replication lag on payment-db reached 240 seconds. A bulk backfill job saturated
-    the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
-    traffic load-balanced across replicas therefore returned data up to four minutes old.
+  expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
+    fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
   - replication
   - reached
@@ -279,38 +245,72 @@
   - consistency
   expected_tools:
   - get_service_logs
-  true_cause_service: payment-db
+  true_cause_service: catalog-db
   inject_failures: true
   failure_rate: 0.35
   max_iterations: 8
-  notes: Read replica lag serving stale data on payment-db, with 35% tool failure injection
-- id: SC-TF-010
+  notes: Read replica lag serving stale data on catalog-db, with 35% tool failure injection
+- id: SC-TF-009
   kind: tool_failure
-  query: warehouse-sync is throwing errors and I'm not sure why
-  expected_service: warehouse-sync
-  expected_archetype: cert_expiry
-  expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
-    certificate was still valid, which is why expiry monitoring did not fire.
+  query: something changed with inventory-service and I can't work out what
+  expected_service: inventory-service
+  expected_archetype: memory_leak_oom
+  expected_root_cause: A listener registered per request was never unregistered, so each request added
+    a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
-  - certificate
-  - expired
-  - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
-  - certificate
-  - expiry
-  - network
+  - unbounded
+  - retained
+  - response
+  - memory
+  - linearly
+  - volume
+  - container
+  - restarted
+  - listener
+  - registered
+  - unregistered
+  - permanently
+  - memory
+  - restart
+  - leak
   expected_tools:
   - get_service_logs
-  true_cause_service: warehouse-sync
+  acceptable_remediation_tools:
+  - rollback_deploy
+  true_cause_service: inventory-service
   inject_failures: true
   failure_rate: 0.35
   max_iterations: 8
-  notes: TLS certificate expiry on warehouse-sync, with 35% tool failure injection
+  notes: Memory leak leading to OOM kills on inventory-service, with 35% tool failure injection
+- id: SC-TF-010
+  kind: tool_failure
+  query: user-service is throwing errors and I'm not sure why
+  expected_service: user-service
+  expected_archetype: downstream_timeout_cascade
+  expected_root_cause: Degradation in user-db propagated upward because user-service retried failed calls
+    three times with no backoff, tripling load on an already-struggling dependency and turning a partial
+    outage into a full one.
+  root_cause_keywords:
+  - became
+  - timeout
+  - configured
+  - threads
+  - blocked
+  - indefinitely
+  - waiting
+  - saturating
+  - making
+  - appear
+  - failure
+  - victim
+  - cascade
+  - timeout
+  - dependency
+  - circuit-breaker
+  expected_tools:
+  - get_service_logs
+  true_cause_service: user-service
+  inject_failures: true
+  failure_rate: 0.35
+  max_iterations: 8
+  notes: Downstream dependency timeout cascading upstream on user-service, with 35% tool failure injection

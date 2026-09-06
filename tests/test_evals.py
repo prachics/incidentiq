@@ -714,3 +714,54 @@ class TestGraderSurvivesArbitraryModelOutput:
         r = _grade(self._sc(), _state(proposal=_proposal(
             remediation_arguments={"service": Weird()})))
         assert isinstance(r.task_success, bool)
+
+
+class TestScenariosAvoidConcurrentIncidents:
+    """A scenario plants the evidence its own failure would leave. Planting it
+    on a service that already carries a different archetype's signatures gives
+    the agent logs describing two concurrent incidents, and the scenario's
+    single expected root cause is no longer the only correct answer.
+
+    The agent found this before the tests did. Asked about shipping-service -
+    both a seeded live situation and, after planting, a bad_deploy_regression
+    scenario - it reported "multiple error signatures, including connection pool
+    exhaustion and NullPointerException, but no clear primary cause" and
+    abstained. An accurate reading of the logs it was given.
+    """
+
+    @staticmethod
+    def _live_services():
+        import json
+        manifest = json.loads((ROOT / "seeds" / "live_situations.json").read_text())
+        return {s["service"] for s in manifest["live_situations"]}
+
+    def test_no_scenario_targets_a_service_with_a_firing_incident(self):
+        live = self._live_services()
+        clashes = [
+            (s.id, s.true_cause_service)
+            for s in load_scenarios(SCENARIO_DIR)
+            if s.true_cause_service in live
+        ]
+        assert not clashes, (
+            f"{len(clashes)} scenarios target a service that already has a firing "
+            f"incident, e.g. {clashes[:3]} - their logs would describe two "
+            "concurrent failures"
+        )
+
+    def test_no_cascading_victim_has_a_firing_incident(self):
+        """A victim with its own unrelated incident makes the cascade symptoms
+        indistinguishable from that incident."""
+        live = self._live_services()
+        clashes = [
+            (s.id, v) for s in load_scenarios(SCENARIO_DIR)
+            for v in s.victim_services if v in live
+        ]
+        assert not clashes, f"cascading victims with their own incidents: {clashes[:3]}"
+
+    def test_the_suite_is_still_complete_after_the_exclusion(self):
+        """Excluding a third of the services must not quietly shrink the suite."""
+        counts = breakdown(load_scenarios(SCENARIO_DIR))
+        assert counts == {
+            "single_service": 40, "cascading": 25, "no_retrieval": 15,
+            "approval_required": 10, "tool_failure": 10,
+        }
