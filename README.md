@@ -57,7 +57,8 @@ The full suite is a multi-hour job on local inference, so results are written as
 each scenario finishes and `--resume` continues an interrupted run:
 
 ```bash
-python -m evals.run --resume       # picks up where it stopped
+./scripts/run_eval.sh              # starts or resumes, whichever is right
+python -m evals.run --resume       # the same thing, explicitly
 ```
 
 An interrupted run loses at most the scenario that was in flight. The progress
