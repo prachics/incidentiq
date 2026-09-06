@@ -53,6 +53,17 @@ python -m evals.run --sample 2 --max-iterations 3   # ~18 min, all 5 scenario ki
 python -m evals.run                                 # the full 100-scenario suite
 ```
 
+The full suite is a multi-hour job on local inference, so results are written as
+each scenario finishes and `--resume` continues an interrupted run:
+
+```bash
+python -m evals.run --resume       # picks up where it stopped
+```
+
+An interrupted run loses at most the scenario that was in flight. The progress
+file is keyed by provider, model, iteration cap and judge setting, so a resume
+cannot silently mix results from two different configurations.
+
 Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env` to run against
 Claude instead; nothing else changes. `python -m evals.compare A.json B.json`
 then reports which failure *modes* moved between two runs, not just the headline

@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import statistics
 import sys
 import time
@@ -50,6 +51,12 @@ ITERATION_CAP: int | None = None
 # leftovers from another's.
 RUN_ID: str = "adhoc"
 RESULTS_DIR = REPO_ROOT / "evals" / "results"
+
+# Results are appended here one line at a time as each scenario finishes, so an
+# interrupted run keeps everything it had already done. A 100-scenario suite is a
+# multi-hour job on local inference; losing it to a sleeping laptop at scenario 80
+# is not an acceptable failure mode.
+PROGRESS_DIR = RESULTS_DIR / "progress"
 
 
 @dataclass
@@ -226,6 +233,53 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
             r.failure_note = (f"proposed {proposed_tool!r}, expected one of "
                               f"{scenario.acceptable_remediation_tools}")
     return r
+
+
+def progress_path(settings: Settings, kind: str | None, cap: int | None,
+                  judged: bool) -> Path:
+    """One progress file per configuration.
+
+    The configuration is in the filename rather than checked after loading,
+    because resuming into a run with a different model, cap or judge setting
+    would silently mix incomparable results - the kind of error that produces a
+    number nobody can reproduce.
+    """
+    model = {
+        "ollama": settings.ollama_model,
+        "anthropic": settings.anthropic_model,
+        "stub": "stub",
+    }.get(settings.llm_provider, settings.llm_provider)
+    model = model.replace(":", "-").replace("/", "-")
+    parts = [settings.llm_provider, model, f"cap{cap or 'full'}",
+             "judged" if judged else "nojudge", kind or "all"]
+    return PROGRESS_DIR / ("progress_" + "_".join(parts) + ".jsonl")
+
+
+def load_progress(path: Path) -> dict[str, ScenarioResult]:
+    """Read completed scenarios from a previous run of the same configuration."""
+    if not path.exists():
+        return {}
+    done: dict[str, ScenarioResult] = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+            done[record["scenario_id"]] = ScenarioResult(**record)
+        except (json.JSONDecodeError, TypeError):
+            # A partially-written final line is expected after a hard kill.
+            # Skip it; that scenario simply re-runs.
+            continue
+    return done
+
+
+def append_progress(path: Path, result: ScenarioResult) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as fh:
+        fh.write(json.dumps(asdict(result), default=str) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())   # survive a power cut, not just a process kill
 
 
 def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None,
@@ -480,6 +534,11 @@ def main() -> int:
                              "job; this trades depth for turnaround during development. "
                              "Always reported in the results file, because it changes "
                              "the numbers.")
+    parser.add_argument("--resume", action="store_true",
+                        help="continue a run of this exact configuration, skipping "
+                             "scenarios already recorded. Results are appended as each "
+                             "scenario finishes, so an interrupted run loses at most the "
+                             "one in flight.")
     parser.add_argument("--no-judge", action="store_true",
                         help="skip groundedness scoring (roughly halves runtime)")
     parser.add_argument("--provider", help="override LLM_PROVIDER")
@@ -534,13 +593,38 @@ def main() -> int:
     print(f"running {len(scenarios)} scenarios against {model} "
           f"({settings.llm_provider}), judge={'on' if judge_llm else 'off'}")
 
-    results: list[ScenarioResult] = []
+    progress = progress_path(settings, args.kind, args.max_iterations, bool(judge_llm))
+    completed: dict[str, ScenarioResult] = {}
+    if args.resume:
+        completed = load_progress(progress)
+        if completed:
+            print(f"resuming: {len(completed)} scenario(s) already done in "
+                  f"{progress.name}")
+        else:
+            print(f"nothing to resume from {progress.name}; starting fresh")
+    elif progress.exists():
+        # Refuse to append this run's results onto a previous run's file. Mixing
+        # them would produce an aggregate over two different executions that
+        # looks like one.
+        print(f"\n{progress.relative_to(REPO_ROOT)} already exists.\n"
+              f"  --resume  to continue it\n"
+              f"  or delete it to start over", file=sys.stderr)
+        return 1
+
+    todo = [sc for sc in scenarios if sc.id not in completed]
+    if completed:
+        print(f"  {len(todo)} remaining of {len(scenarios)}")
+
+    results: list[ScenarioResult] = list(completed.values())
     t0 = time.perf_counter()
-    for i, scenario in enumerate(scenarios, 1):
+    for i, scenario in enumerate(todo, 1):
         r = run_scenario(scenario, settings, judge_llm, args.max_iterations)
         results.append(r)
+        # Write before printing: if the process dies during the next scenario,
+        # this one is already safe on disk.
+        append_progress(progress, r)
         mark = "ok  " if r.task_success else ("ERR " if r.error else "fail")
-        print(f"  [{i:>3}/{len(scenarios)}] {mark} {r.scenario_id:<12} "
+        print(f"  [{i:>3}/{len(todo)}] {mark} {r.scenario_id:<12} "
               f"{r.latency_s:>6.1f}s  {r.failure_note[:58]}")
 
     summary = aggregate(results, settings)
@@ -563,6 +647,11 @@ def main() -> int:
         for note, count in failures.items():
             print(f"  {count:>3}x  {note}")
     print(f"\nwrote {md_path.relative_to(REPO_ROOT)}")
+    if len(results) == len(scenarios):
+        progress.unlink(missing_ok=True)   # suite finished; the resume file is spent
+    else:
+        print(f"progress kept in {progress.relative_to(REPO_ROOT)} - "
+              f"re-run with --resume to continue")
     return 0
 
 
