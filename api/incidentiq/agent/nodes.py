@@ -13,10 +13,10 @@ recorded tool failure the agent can reason about.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
-import uuid
 from typing import Any
 
 import psycopg
@@ -51,11 +51,14 @@ class NodeContext:
         llm: LLMProvider,
         injector: FailureInjector | None = None,
         tool_max_retries: int = 3,
+        control_plane: Any | None = None,
     ):
         self.conn = conn
         self.llm = llm
         self.injector = injector or FailureInjector()
         self.tool_max_retries = tool_max_retries
+        # Where approved actions are sent. None means built from settings.
+        self.control_plane = control_plane
 
 
 def _event(node: str, started: float, **extra: Any) -> dict[str, Any]:
@@ -521,7 +524,12 @@ def await_approval(state: InvestigationState, ctx: NodeContext) -> dict[str, Any
     """
     started = time.perf_counter()
     proposal = state.get("proposal") or {}
-    approval_id = f"APR-{uuid.uuid4().hex[:12]}"
+    # Derived from the proposal, not random: if the process dies after the row
+    # is written but before this node's checkpoint, the node runs again on
+    # resume and must find the same approval - including a decision a human
+    # may already have made on it - rather than create a second one.
+    approval_id = approval_id_for(state["incident_id"], state.get("run_id", ""),
+                                  state.get("iteration", 0), proposal)
 
     evidence = [
         d for d in (state.get("retrieved_docs") or [])
@@ -531,23 +539,28 @@ def await_approval(state: InvestigationState, ctx: NodeContext) -> dict[str, Any
     supporting = [c for c in (state.get("tool_calls") or []) if c["status"] in
                   ("success", "partial")][-6:]
 
-    ctx.conn.execute(
-        "INSERT INTO approvals (id, investigation_id, proposed_tool, proposed_arguments, "
-        "reasoning, evidence) VALUES (%s, %s, %s, %s, %s, %s)",
-        (approval_id, state["incident_id"], proposal.get("remediation_tool"),
-         json.dumps(proposal.get("remediation_arguments") or {}),
-         proposal.get("root_cause", "") + "\n\n" + proposal.get("remediation", ""),
-         json.dumps({"documents": evidence, "tool_calls": supporting}, default=str)),
-    )
-    ctx.conn.execute(
-        "INSERT INTO audit_log (investigation_id, event_type, actor, payload) "
-        "VALUES (%s, 'approval_requested', 'agent', %s)",
-        (state["incident_id"], json.dumps({
-            "approval_id": approval_id,
-            "tool": proposal.get("remediation_tool"),
-            "arguments": proposal.get("remediation_arguments"),
-        }, default=str)),
-    )
+    # The approval and its audit event commit together, so a rerun that finds
+    # the approval already there can rely on its event being there too.
+    with ctx.conn.transaction():
+        created = ctx.conn.execute(
+            "INSERT INTO approvals (id, investigation_id, proposed_tool, proposed_arguments, "
+            "reasoning, evidence) VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO NOTHING RETURNING id",
+            (approval_id, state["incident_id"], proposal.get("remediation_tool"),
+             json.dumps(proposal.get("remediation_arguments") or {}),
+             proposal.get("root_cause", "") + "\n\n" + proposal.get("remediation", ""),
+             json.dumps({"documents": evidence, "tool_calls": supporting}, default=str)),
+        ).fetchone()
+        if created:
+            ctx.conn.execute(
+                "INSERT INTO audit_log (investigation_id, event_type, actor, payload) "
+                "VALUES (%s, 'approval_requested', 'agent', %s)",
+                (state["incident_id"], json.dumps({
+                    "approval_id": approval_id,
+                    "tool": proposal.get("remediation_tool"),
+                    "arguments": proposal.get("remediation_arguments"),
+                }, default=str)),
+            )
 
     request = {
         "approval_id": approval_id,
@@ -569,6 +582,20 @@ def await_approval(state: InvestigationState, ctx: NodeContext) -> dict[str, Any
     }
 
 
+def approval_id_for(investigation_id: str, run_id: str, iteration: int,
+                    proposal: dict[str, Any]) -> str:
+    """Stable id for one proposal at one point in one run. A later proposal - after
+    a rejection, the iteration has moved on - or a fresh run gets a new id."""
+    key = json.dumps({
+        "investigation": investigation_id,
+        "run": run_id,
+        "iteration": iteration,
+        "tool": proposal.get("remediation_tool"),
+        "arguments": proposal.get("remediation_arguments") or {},
+    }, sort_keys=True, default=str)
+    return f"APR-{hashlib.sha256(key.encode()).hexdigest()[:12]}"
+
+
 # ── 8. act ──────────────────────────────────────────────────
 def act(state: InvestigationState, ctx: NodeContext) -> dict[str, Any]:
     """Execute an approved action, or route a rejection back into planning."""
@@ -584,10 +611,11 @@ def act(state: InvestigationState, ctx: NodeContext) -> dict[str, Any]:
         }
 
     row = ctx.conn.execute(
-        "SELECT decision, rejection_reason, modified_arguments FROM approvals WHERE id = %s",
+        "SELECT decision, rejection_reason, modified_arguments, decided_by "
+        "FROM approvals WHERE id = %s",
         (approval_id,),
     ).fetchone()
-    decision, rejection_reason, modified = row if row else (None, None, None)
+    decision, rejection_reason, modified, decided_by = row if row else (None, None, None, None)
 
     if decision == "rejected":
         # A rejection is information, not a stop. It goes into the scratchpad so
@@ -595,9 +623,10 @@ def act(state: InvestigationState, ctx: NodeContext) -> dict[str, Any]:
         # than the investigation simply ending.
         ctx.conn.execute(
             "INSERT INTO audit_log (investigation_id, event_type, actor, payload) "
-            "VALUES (%s, 'approval_rejected', 'human', %s)",
-            (state["incident_id"], json.dumps({"approval_id": approval_id,
-                                               "reason": rejection_reason}, default=str)),
+            "VALUES (%s, 'approval_rejected', %s, %s)",
+            (state["incident_id"], decided_by or "human",
+             json.dumps({"approval_id": approval_id, "reason": rejection_reason},
+                        default=str)),
         )
         return {
             "pending_approval": {**pending, "decision": "rejected",
@@ -631,29 +660,49 @@ def act(state: InvestigationState, ctx: NodeContext) -> dict[str, Any]:
         result = execute_action(
             ctx.conn, tool, pending.get("arguments") or {},
             investigation_id=state["incident_id"], approval_id=approval_id,
+            control_plane=ctx.control_plane,
         )
     except Exception as exc:  # noqa: BLE001
         log.exception("approved action failed")
+        ctx.conn.execute(
+            "INSERT INTO audit_log (investigation_id, event_type, actor, payload) "
+            "VALUES (%s, 'action_failed', 'agent', %s)",
+            (state["incident_id"], json.dumps({"approval_id": approval_id,
+                                               "error": str(exc)}, default=str)),
+        )
         return {
             "status": "failed",
             "failure_reason": f"approved action failed: {exc}",
+            # The decision is carried so `route_after_act` can tell a failed
+            # approved action, which is retried, from a rejection.
+            "pending_approval": {**pending, "decision": decision,
+                                 "modified_arguments": modified},
             "scratchpad": [f"act: execution failed - {exc}"],
             "events": [_event("act", started, ok=False)],
         }
 
+    execution = result.get("execution") or {}
+    # A second run of `act` for the same approval (after a crash, before the
+    # checkpoint) finds the action already done. Logged as its own event so the
+    # audit trail shows the re-run rather than a second execution.
+    event = "action_already_executed" if execution.get("already_executed") \
+        else "action_executed"
     ctx.conn.execute(
         "INSERT INTO audit_log (investigation_id, event_type, actor, payload) "
-        "VALUES (%s, 'action_executed', 'agent', %s)",
-        (state["incident_id"], json.dumps({"approval_id": approval_id,
-                                           "result": result}, default=str)),
+        "VALUES (%s, %s, 'agent', %s)",
+        (state["incident_id"], event, json.dumps({"approval_id": approval_id,
+                                                  "result": result}, default=str)),
     )
     return {
         "action_result": result,
         "pending_approval": {**pending, "decision": decision,
                              "modified_arguments": modified},
         "status": "running",
-        "scratchpad": [f"act: executed {tool.name} under approval {approval_id}"],
-        "events": [_event("act", started, ok=True, decision=decision)],
+        "failure_reason": None,   # clears an earlier failed attempt
+        "scratchpad": [f"act: executed {tool.name} under approval {approval_id} "
+                       f"({execution.get('attempts', 1)} attempt(s))"],
+        "events": [_event("act", started, ok=True, decision=decision,
+                          attempts=execution.get("attempts", 1))],
     }
 
 

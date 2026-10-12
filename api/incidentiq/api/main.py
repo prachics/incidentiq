@@ -1,13 +1,9 @@
 """FastAPI application.
 
-Deliberately small for now. The investigation, approval, and streaming
-endpoints arrive in Phase 4 alongside the approval flow they exist to serve;
-building them ahead of that would mean guessing at the shapes the frontend
-needs.
+Operational endpoints live here: liveness, readiness, what is loaded, and the
+tool catalogue, so a fresh `docker compose --profile app up` can be checked.
 
-What is here makes `docker compose --profile app up` a true statement rather
-than an aspirational one: the container starts, reports whether its
-dependencies are actually reachable, and answers what is loaded.
+Investigations and approvals are in their own routers and need an API key.
 """
 
 from __future__ import annotations
@@ -19,6 +15,9 @@ from typing import Any
 import psycopg
 from fastapi import FastAPI, HTTPException
 
+from incidentiq.api import approvals, investigations
+from incidentiq.api.auth import parse_api_keys
+from incidentiq.api.worker import Worker
 from incidentiq.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -34,15 +33,25 @@ async def lifespan(app: FastAPI):
         settings.require_llm_credentials()
     except RuntimeError as exc:
         log.warning("LLM not configured: %s", exc)
+    # Parsing raises on a malformed entry, so a broken API_KEYS stops the start.
+    if not parse_api_keys(settings.api_keys):
+        log.warning("API_KEYS is empty: investigation and approval endpoints will answer 401")
+    if getattr(app.state, "worker", None) is None:
+        app.state.worker = Worker()
     yield
+    worker = getattr(app.state, "worker", None)
+    if worker is not None:
+        worker.shutdown()
 
 
 app = FastAPI(
     title="IncidentIQ",
     description="Agentic AI production-support platform.",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
+app.include_router(investigations.router)
+app.include_router(approvals.router)
 
 
 def _connect() -> psycopg.Connection:

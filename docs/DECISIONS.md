@@ -414,3 +414,80 @@ to remember mentioning.
 
 **Cost.** Capped runs understate task completion. The generated report says so
 explicitly.
+
+---
+
+## 17. The approval id is the idempotency key
+
+**Date:** Phase 4
+
+**Decision.** Every request that executes an approved action carries
+`Idempotency-Key: <approval id>`. The control plane applies the first request
+per key and replays its stored response to every later one.
+
+**Why.** One approval authorises one execution, and a key per approval says
+exactly that. A random key per request would protect a single HTTP retry but
+not the other duplicate: `act` running again after a crash, which builds a new
+request. A key derived from the approval is the same in both cases, so the
+guarantee does not depend on which code path repeats the call.
+
+**Cost.** An approver who wants the same action applied twice needs two
+approvals. That is the intended behaviour, not a limitation.
+
+**Reversal.** The key is computed in one place, `execute_action`.
+
+---
+
+## 18. The approver's identity comes from the API key
+
+**Date:** Phase 4
+
+**Decision.** API keys map to a user and a role (`viewer`, `approver`).
+`decided_by` is the user behind the key that made the request. There is no
+`decided_by` field in the request body.
+
+**Why.** An approval record is only worth something if "who approved this?"
+has a trustworthy answer. A body field lets any caller write any name.
+
+**Cost.** Static keys in configuration, no rotation or SSO. The routes depend
+only on a `Principal(user, role)`, so putting a real identity provider in front
+changes the authentication function and nothing else.
+
+---
+
+## 19. A decision is a conditional UPDATE, not a read followed by a write
+
+**Date:** Phase 4
+
+**Decision.** `UPDATE approvals SET decision = … WHERE id = … AND decision IS NULL
+RETURNING …`. No row back means someone else decided first: 409.
+
+**Why.** Reading "is it pending?" and then writing lets two concurrent requests
+both see pending and both write; the second silently overwrites the first, and
+the graph is resumed twice. The conditional update makes the check and the
+write one atomic step. Tested with five concurrent approvers: one 202, four 409,
+one resume.
+
+---
+
+## 20. The control plane is a mock behind a real HTTP contract
+
+**Date:** Phase 4
+
+**Decision.** Approved actions go through an HTTP client to a mock control plane.
+By default it runs in-process through an httpx transport; in the compose stack
+it is its own container, set by `CONTROL_PLANE_URL`.
+
+**Why.** Restarting real services adds nothing to the engineering here. What
+matters is the failure behaviour of a remote call - refused, applied but
+unanswered, slow - and a direct function call cannot fail that way. Keeping the
+client identical in both modes means the tests exercise the same retry and
+idempotency code that crosses the network in the container setup.
+
+**Cost.** The mock's fault injection is seeded per (key, request number), so it
+is reproducible but simpler than a real network. A lost response becomes a read
+timeout in-process and a 504 over HTTP.
+
+**Reversal.** Point `CONTROL_PLANE_URL` at anything that implements
+`POST /v1/operations` with idempotency keys.
+

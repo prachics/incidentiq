@@ -12,7 +12,7 @@ is persisted and survives process death**, **write actions are gated
 structurally rather than by prompt**, and **there is an evaluation harness that
 produces real numbers, including bad ones.**
 
-**Status:** Phases 1–3 complete and measured. Phase 4 (approval API) next.
+**Status:** Phases 1–4 complete and measured. Phase 5 (frontend) next.
 Every number below comes from the harness in this repository and can be
 reproduced with the commands given.
 
@@ -74,7 +74,7 @@ Optional services:
 
 ```bash
 docker compose up -d langfuse      # tracing UI at :3001 (schema ready, not yet instrumented)
-docker compose --profile app up -d # API at :8000 — health, readiness, stats, tool catalogue
+docker compose --profile app up -d # API at :8000, mock control plane at :8100
 ```
 
 ---
@@ -182,19 +182,21 @@ graph TB
         MOCK[(Mock infrastructure<br/>logs · metrics · deploys)]
     end
 
-    API[API — FastAPI]
+    API[API — FastAPI<br/>API keys · viewer / approver]
+    HUMAN([Approver]) -->|POST decision| API
+    CP[Mock control plane<br/>Idempotency-Key ledger]
 
-    API --> N1
+    API -->|start / resume| N1
     N2 --> CHUNK
     CHUNK -.cites.-> CORP
     N4 --> RO --> MOCK
-    N8 --> WR --> STATE
+    N8 --> WR -->|HTTP, retried,<br/>key = approval id| CP
     agent <-->|checkpoint after<br/>every node transition| STATE
 
     classDef store fill:#1f2937,stroke:#4b5563,color:#e5e7eb
     classDef gate fill:#7c2d12,stroke:#ea580c,color:#fed7aa
     class CORP,CHUNK,STATE,MOCK store
-    class N7,WR gate
+    class N7,WR,CP gate
 ```
 
 Three properties are worth calling out.
@@ -212,8 +214,57 @@ re-retrieving is worth an iteration.
 attribute the graph reads to decide whether to interrupt, LangGraph's
 `interrupt_before` halting the run with a checkpoint written, and a runtime
 check that refuses to execute without an approval row naming that investigation,
-that tool, and `decision='approved'`. No phrasing of a prompt makes a write tool
+that tool, and an approving decision. No phrasing of a prompt makes a write tool
 execute.
+
+**An approved action executes once, however many times it is sent.** Actions
+go to a control plane over HTTP, which can refuse a request, or apply it and
+lose the response. The client retries with the approval id as the
+`Idempotency-Key`; the control plane stores the first response per key and
+replays it to every retry. If the process dies after the action ran but before
+the checkpoint was written, `act` runs again on resume and finds the action
+already recorded. An action that fails on every attempt leaves the
+investigation `failed`, paused before `act`; `resume` retries it under the same
+key. All of these are tested against injected faults.
+
+---
+
+## Using the API
+
+Every investigation and approval endpoint needs an API key (`API_KEYS` in
+`.env`, `key:user:role`). A `viewer` can start and read investigations; an
+`approver` can also decide. Who approved is taken from the key, never from the
+request body.
+
+```bash
+V="Authorization: Bearer dev-viewer-key"; A="Authorization: Bearer dev-approver-key"
+
+# Start: returns 202 at once; the agent runs in a background worker
+curl -X POST localhost:8000/investigations -H "$V" -H 'content-type: application/json' \
+  -d '{"query": "getting paged for web-frontend, latency is way up. what is going on?"}'
+
+curl localhost:8000/approvals?status=pending -H "$V"     # what is waiting for a human
+curl localhost:8000/approvals/APR-… -H "$V"              # reasoning, evidence, argument schema
+
+# Approve as proposed, approve with edited arguments, or reject with a reason
+curl -X POST localhost:8000/approvals/APR-…/decision -H "$A" -H 'content-type: application/json' \
+  -d '{"decision": "approve"}'
+curl -X POST localhost:8000/approvals/APR-…/decision -H "$A" -H 'content-type: application/json' \
+  -d '{"decision": "reject", "reason": "web-frontend is a victim; look at its dependencies"}'
+
+curl localhost:8000/investigations/IQ-… -H "$V"          # status, approvals, executed actions
+curl localhost:8000/investigations/IQ-…/audit -H "$V"    # append-only decision record
+```
+
+| Endpoint | Role | Notes |
+|---|---|---|
+| `POST /investigations` | viewer | 202; `incident_id` optional; 409 if it exists |
+| `GET /investigations`, `/{id}`, `/{id}/tool-calls`, `/{id}/audit` | viewer | filter the list with `?status=` |
+| `POST /investigations/{id}/resume` | approver | recovery after a crash, or retry of a failed action; 409 while an approval is pending or a job is running |
+| `GET /approvals`, `/approvals/{id}` | viewer | `?status=pending\|decided\|all` |
+| `POST /approvals/{id}/decision` | approver | exactly one decision: concurrent attempts get 409; edited arguments validated (422); a rejection needs a reason |
+
+Interactive docs at `localhost:8000/docs`.
 
 ---
 
@@ -284,6 +335,12 @@ attempt proposed rolling back to `v1.2.3` — on a service whose deploys were al
 `v2.27.x`. Error text that feeds back into an agent's context is part of the
 prompt.
 
+**A passing test can pin the wrong behaviour.** The schema allowed an approval
+decision of `modified`, and `act` routed it to execution, but `execute_action`
+accepted only `approved`. Every approval with edited arguments would have
+failed. The existing test set `decision='approved'` together with edited
+arguments, so it passed. Building the API that writes `modified` exposed it.
+
 **When a capable model fails in a way that looks careless, read the scenario
 before believing the score.** Five times an eval expectation was wrong rather
 than the agent — including one case where the agent read logs describing two
@@ -300,12 +357,9 @@ is more often a broken expectation than a broken model.
 | 1 | Docker Compose, schema, migrations, seeded corpora and mock infrastructure | **complete** |
 | 2 | Chunking, embeddings, hybrid search, metadata filtering, Recall@5 | **complete** |
 | 3 | LangGraph agent, state persistence, tools, retry logic, evaluation harness | **complete** |
-| 4 | Approval API endpoints and audit trail exposure | next |
-| 5 | Frontend: investigation, evidence, approval, trace views | not started |
+| 4 | Approval API, audit trail, API keys, actions executed exactly once via a mock control plane | **complete** |
+| 5 | Frontend: investigation, evidence, approval, trace views | next |
 | 6 | MCP server exposing the diagnostic tools | not started |
-
-The API currently serves health, readiness, corpus statistics and the tool
-catalogue. Investigation and approval endpoints arrive in Phase 4.
 
 Langfuse is provisioned in Docker Compose and configured in settings, but the
 agent is **not yet instrumented** to emit traces to it. Per-node timings, token
@@ -316,7 +370,7 @@ counts and retry counts are recorded in the investigation state and in the
 
 ## Testing
 
-240 tests. Beyond the usual unit coverage, three areas are tested specifically:
+294 tests. Beyond the usual unit coverage, four areas are tested specifically:
 
 - **State recovery.** A test kills a run mid-investigation, constructs a
   completely fresh runner sharing nothing but the database, resumes it, and
@@ -324,7 +378,17 @@ counts and retry counts are recorded in the investigation state and in the
   restarting.
 - **The approval gate.** Unapproved, rejected, mismatched-tool and nonexistent
   approvals are each refused; an approver's edited arguments override the
-  agent's.
+  agent's. Five approvers deciding at once produce exactly one decision.
+- **Executing an action once.** A response lost after the control plane applied
+  the action, `act` re-running after a crash before its checkpoint, a crash
+  between applying and recording, and a control plane that is down for every
+  attempt and later recovers through `resume`: in each case the action is
+  applied at most once, and the outcome is stored with its attempt count. A
+  manual resume is refused while the investigation already has a job, never runs
+  `act` for an undecided approval, and a decision made while the job that
+  requested it is still finishing is resumed right after that job. A crash
+  right after an approval is created recovers to that same approval, whether
+  it is decided first or the run is resumed first.
 - **The evaluation harness itself.** An eval that grades incorrectly is worse
   than no eval, because it produces numbers people believe. The grading rules
   are pinned by test, including that the grader survives arbitrary model output

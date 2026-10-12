@@ -1,6 +1,7 @@
 # IncidentIQ - local stack.
 #   docker compose up -d        brings up Postgres + Langfuse
-#   docker compose --profile app up -d   also builds and runs the API
+#   docker compose --profile app up -d   also builds and runs the API and the
+#                                        mock control plane it sends actions to
 #
 # The API is behind a profile so you can develop it locally against the
 # containerised Postgres without rebuilding an image on every edit.
@@ -62,9 +63,30 @@ services:
       # Override the host: inside the compose network Postgres is `postgres`.
       DATABASE_URL: postgresql://${POSTGRES_USER:-incidentiq}:${POSTGRES_PASSWORD:-incidentiq_dev_password}@postgres:5432/${POSTGRES_DB:-incidentiq}
       LANGFUSE_HOST: http://langfuse:3000
+      # Approved actions cross a real network boundary in the compose stack.
+      CONTROL_PLANE_URL: http://control-plane:8100
     volumes:
       # Cache the downloaded embedding model between container restarts.
       - model_cache:/root/.cache/huggingface
+
+  control-plane:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: incidentiq-control-plane
+    restart: unless-stopped
+    command: ["uvicorn", "incidentiq.controlplane.app:app", "--host", "0.0.0.0", "--port", "8100"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # Unauthenticated mock: reachable from this machine only. The API uses
+      # the compose network, not this mapping.
+      - "127.0.0.1:${CONTROL_PLANE_PORT:-8100}:8100"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-incidentiq}:${POSTGRES_PASSWORD:-incidentiq_dev_password}@postgres:5432/${POSTGRES_DB:-incidentiq}
 
 volumes:
   postgres_data:

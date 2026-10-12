@@ -23,6 +23,7 @@ preserving history it did not create.
 from __future__ import annotations
 
 import operator
+import uuid
 from typing import Annotated, Any, Literal, TypedDict
 
 InvestigationStatus = Literal["running", "awaiting_approval", "complete", "failed"]
@@ -113,6 +114,10 @@ class InvestigationState(TypedDict, total=False):
 
     # ── Identity and input ──────────────────────────────────
     incident_id: str
+    # New on every fresh start (including after reset); kept across resumes.
+    # Part of each approval id, so a re-run of the same investigation never
+    # reuses the idempotency keys of an earlier run.
+    run_id: str
     user_query: str
 
     # ── Accumulated understanding ───────────────────────────
@@ -154,6 +159,7 @@ def initial_state(
     """
     return {
         "incident_id": incident_id,
+        "run_id": uuid.uuid4().hex,
         "user_query": user_query,
         "entities": {},
         "retrieved_docs": [],

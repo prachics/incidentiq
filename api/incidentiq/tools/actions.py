@@ -1,25 +1,26 @@
 """Write tools. Every one of these is approval-gated.
 
-Nothing here touches a real system - each records intent to the `actions` table.
-That is deliberate and is the honest design for a portfolio system: the
-interesting engineering is the approval gate, the audit trail, and the graph
-interrupt, none of which are made more interesting by actually restarting
-something.
+Each tool validates its request against the mock infrastructure; `execute_action`
+sends it to the mock control plane (`incidentiq.controlplane`) at most once per
+approval. Nothing here changes a real system.
 
-The gate is enforced structurally rather than by convention. `requires_approval`
-is a class attribute the graph reads to decide whether to interrupt, and
-`execute_action` refuses to run without an approval row whose decision is
-'approved'. A tool cannot be made to run by prompting the model differently.
+The gate is structural: `requires_approval` makes the graph interrupt, and
+`execute_action` refuses without an approval row for this investigation and
+tool whose decision is 'approved' or 'modified'.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import psycopg
 from pydantic import BaseModel, Field, field_validator
 
+from incidentiq.controlplane import ControlPlaneClient, ControlPlaneError
 from incidentiq.tools.base import Tool, ToolError, ToolStatus, registry
+
+APPROVED_DECISIONS = ("approved", "modified")
 
 
 class RestartServiceArgs(BaseModel):
@@ -80,7 +81,7 @@ class RestartService(Tool):
             "instance_count": len(targets),
             "rolling": args.instance_id is None,
             "reason": args.reason,
-            "note": "Intent recorded. No live system was modified.",
+            "note": "Validated against the mock infrastructure. No live system is modified.",
         }
 
 
@@ -119,7 +120,7 @@ class ScaleService(Tool):
             "direction": "up" if args.replica_count > current else
                          ("down" if args.replica_count < current else "no change"),
             "reason": args.reason,
-            "note": "Intent recorded. No live system was modified.",
+            "note": "Validated against the mock infrastructure. No live system is modified.",
         }
 
 
@@ -201,7 +202,7 @@ class RollbackDeploy(Tool):
             "target_deployed_at": target[1].isoformat(),
             "target_deploy_id": target[0],
             "reason": args.reason,
-            "note": "Intent recorded. No live system was modified.",
+            "note": "Validated against the mock infrastructure. No live system is modified.",
         }
 
 
@@ -212,16 +213,23 @@ def execute_action(
     *,
     investigation_id: str,
     approval_id: str,
+    control_plane: ControlPlaneClient | None = None,
 ) -> dict[str, Any]:
-    """Run an approved write tool and record it.
+    """Run an approved write tool, at most once per approval, and record it.
 
     Refuses unless the named approval exists, belongs to this investigation, and
-    carries decision='approved'. This is the structural half of the gate: the
-    graph interrupts before proposing, and this refuses to act without the row
+    carries an approving decision. This is the structural half of the gate: the
+    graph interrupts before acting, and this refuses to act without the row
     that interrupt produced. Neither alone is sufficient.
+
+    The approval id is the idempotency key. One approval authorises one
+    execution, so a key per approval says exactly that: however many times this
+    function runs for it - a retry after a lost response, or `act` re-running
+    after a crash that happened before its checkpoint was written - the control
+    plane applies the action once.
     """
     row = conn.execute(
-        "SELECT decision, proposed_tool, modified_arguments FROM approvals "
+        "SELECT decision, proposed_tool, proposed_arguments, modified_arguments FROM approvals "
         "WHERE id = %s AND investigation_id = %s",
         (approval_id, investigation_id),
     ).fetchone()
@@ -231,8 +239,8 @@ def execute_action(
             f"no approval {approval_id!r} for investigation {investigation_id!r}",
             status=ToolStatus.FAILED,
         )
-    decision, proposed_tool, modified = row
-    if decision != "approved":
+    decision, proposed_tool, proposed, modified = row
+    if decision not in APPROVED_DECISIONS:
         raise ToolError(
             f"approval {approval_id} is {decision or 'still pending'}, not approved",
             status=ToolStatus.FAILED,
@@ -243,19 +251,72 @@ def execute_action(
             status=ToolStatus.FAILED,
         )
 
-    # An approver who edited the arguments approved *their* version, not the
-    # agent's. Using the original would silently discard the correction.
-    effective = modified if modified else raw_args
+    # What runs is what was approved: the approver's edit if there is one,
+    # otherwise the arguments shown on the approval. Using the agent's original
+    # would silently discard an edit; accepting different arguments from the
+    # caller would run something nobody approved.
+    if raw_args and raw_args != proposed:
+        raise ToolError(
+            f"arguments for {approval_id} differ from the ones that were approved",
+            status=ToolStatus.FAILED,
+        )
+    effective = modified if modified else proposed
+
+    done = conn.execute(
+        "SELECT result FROM actions WHERE idempotency_key = %s AND outcome = 'executed'",
+        (approval_id,),
+    ).fetchone()
+    if done:
+        return {**done[0], "execution": {**done[0]["execution"], "already_executed": True}}
 
     args = tool.validate_args(effective)
-    result = tool.run(conn, args)
+    request = tool.run(conn, args)
 
-    conn.execute(
-        "INSERT INTO actions (investigation_id, approval_id, tool_name, arguments, outcome) "
-        "VALUES (%s, %s, %s, %s, 'recorded')",
-        (investigation_id, approval_id, tool.name, __import__("json").dumps(effective)),
-    )
+    client = control_plane or ControlPlaneClient.from_settings(conn)
+    try:
+        sent = client.submit(tool.name, args.model_dump(mode="json"),
+                             idempotency_key=approval_id)
+    except ControlPlaneError as exc:
+        _record(conn, investigation_id, approval_id, tool.name, effective,
+                outcome="failed", attempts=exc.attempts, error="; ".join(exc.errors))
+        raise ToolError(str(exc), status=ToolStatus.FAILED) from exc
+    finally:
+        if control_plane is None:
+            client.close()
+
+    result = {
+        **request,
+        "operation_id": sent.body.get("operation_id"),
+        "execution": {
+            "attempts": sent.attempts,
+            "replayed": sent.replayed,
+            "already_executed": False,
+            "failed_attempts": sent.errors,
+        },
+    }
+    _record(conn, investigation_id, approval_id, tool.name, effective,
+            outcome="executed", attempts=sent.attempts, result=result)
     return result
+
+
+def _record(conn: psycopg.Connection, investigation_id: str, approval_id: str,
+            tool_name: str, arguments: dict[str, Any], *, outcome: str, attempts: int,
+            result: dict[str, Any] | None = None, error: str | None = None) -> None:
+    """One row per approval. A later run updates it, adds its attempts and appends
+    its failure details, so the row keeps the whole history of what it took."""
+    conn.execute(
+        "INSERT INTO actions (investigation_id, approval_id, tool_name, arguments, "
+        "outcome, idempotency_key, attempts, result, error) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO UPDATE SET "
+        "outcome = EXCLUDED.outcome, attempts = actions.attempts + EXCLUDED.attempts, "
+        "result = EXCLUDED.result, "
+        "error = CASE WHEN EXCLUDED.error IS NULL THEN actions.error "
+        "ELSE concat_ws(' | ', actions.error, EXCLUDED.error) END, executed_at = now()",
+        (investigation_id, approval_id, tool_name, json.dumps(arguments, default=str),
+         outcome, approval_id, attempts,
+         json.dumps(result, default=str) if result is not None else None, error),
+    )
 
 
 for _tool in (RestartService(), ScaleService(), RollbackDeploy()):

@@ -51,7 +51,8 @@ ERROR:  audit_log is append-only; UPDATE is not permitted
 | `investigations` | One row per investigation: status, entities, scratchpad, iteration |
 | `tool_calls` | One row per **attempt**, including failures — retries are visible, not collapsed |
 | `approvals` | Proposed action, reasoning, cited evidence, decision |
-| `actions` | Write-tool intent. Records what *would* have happened; touches nothing real |
+| `actions` | One row per approved action: outcome, attempts, result. Unique on the idempotency key |
+| `control_plane_operations` | The mock control plane's ledger: what it applied, once per key |
 | `audit_log` | Append-only decision record |
 
 `tool_calls` storing one row per attempt rather than per logical call is what
@@ -192,7 +193,7 @@ The gate is structural, in three independent places:
    interrupt
 2. `interrupt_before=["act"]` halts the graph with a checkpoint written
 3. `execute_action` refuses without an approval row naming this investigation,
-   this tool, and `decision='approved'`
+   this tool, and an approving decision (`approved`, or `modified` with the approver's arguments)
 
 No prompt phrasing makes a write tool execute.
 
@@ -207,6 +208,77 @@ mistakes, not tamper-proof against a DBA. Real immutability needs an external
 append-only store.
 
 ---
+
+### Executing an approved action
+
+Approval answers *whether* an action may run. It does not answer how many times
+it runs, and that becomes a real question as soon as the action leaves the
+process. Phase 4 sends it to a control plane over HTTP (a mock: it records what
+it would apply, and touches nothing real), which brings two ways to apply an
+action twice:
+
+1. **The response is lost.** The control plane applied a rollback, the reply
+   never arrived, and the client retries. Without protection the rollback runs
+   again.
+2. **The process dies between acting and checkpointing.** LangGraph checkpoints
+   after a node completes. If the API dies after `act` ran the action but before
+   that checkpoint, resuming re-runs `act`.
+
+Both are handled with one key. The approval id is sent as the `Idempotency-Key`
+on every attempt. The control plane stores the first response per key and
+returns it, marked as a replay, to any later request with that key; the same key
+with a different body is a 422, because it means the caller lost track of what
+it was retrying. `execute_action` also checks its own `actions` table first, so
+a re-run `act` returns the recorded result without calling out at all.
+
+Retries are limited to what can succeed on a second try: connection errors,
+timeouts, 5xx and 429. Any other 4xx means the request is wrong, and is not repeated. A
+control plane that stays down for every attempt leaves the action recorded as
+`failed` with its attempt count, and the investigation failed with the reason;
+deciding to try again later reuses the same key, so it is still safe.
+
+What the key does not cover: a control plane that loses its own ledger. Real
+systems expire idempotency keys after a retention window for the same reason,
+and a retry after that window is a new request.
+
+### Deciding over HTTP
+
+`POST /approvals/{id}/decision` is the one write a human makes. It is a
+conditional `UPDATE ... WHERE decision IS NULL`, so two approvers clicking at
+once produce one decision and one 409, rather than whichever write landed last.
+The approver's identity comes from the API key, not the body. Edited arguments
+are validated against the tool's schema before they are stored, so a bad edit
+is a 422 now rather than a failed action after the agent resumes.
+
+The run itself happens in one background worker thread, with at most one job
+per investigation. A single local model serves one request at a time, so more
+threads would only move the queue into the model server. If the worker dies,
+nothing is lost: checkpoints are in Postgres and `POST /investigations/{id}/resume`
+continues from the last one. The resume refuses to run `act` for an approval
+that has no decision, and an approved action that failed pauses before `act`
+again, so the same resume retries it under the same idempotency key.
+
+The approval row is written by the job that then pauses, so a fast approver can
+decide before that job has returned. The decision's resume is held as a
+follow-up and runs as soon as the job ends, rather than being dropped.
+
+An approval's id is derived from the investigation, the run, the iteration and
+the proposed action, not generated at random. The run id is created on every
+fresh start, so re-running an investigation after a reset gets new keys.
+
+Checkpoints belong to the graph version that wrote them. A run paused by one
+version and resumed by a version with different state fields can stop at the
+same interrupt without running `act`; the runner detects a resume that makes no
+progress and fails the investigation with that reason instead of retrying it in
+a loop. Upgrades should drain paused investigations or migrate their state. If the process dies after the row is
+written but before `await_approval` is checkpointed, the node runs again on
+resume and finds the same approval, decided or not, instead of creating a
+second one that the original decision would never reach.
+
+These worker guarantees - one job per investigation, follow-ups after a
+decision - hold within one API process. Running several API processes would
+need a per-investigation lease in Postgres (for example `SELECT … FOR UPDATE
+SKIP LOCKED` on a jobs table) in place of the in-memory set.
 
 ## Known failure modes
 

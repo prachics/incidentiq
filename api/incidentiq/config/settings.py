@@ -54,19 +54,31 @@ class Settings(BaseSettings):
     failure_injection_rate: float = 0.2
     failure_injection_seed: int = 42
 
+    # ── Control plane (where approved actions are sent) ─────
+    # Empty means in-process: the mock control plane is called through an httpx
+    # transport, with no network and no extra container.
+    control_plane_url: str = ""
+    control_plane_timeout_s: float = 5.0
+    action_max_attempts: int = 4
+    action_backoff_s: float = 0.25
+    # Faults the mock control plane injects, seeded like tool failure injection.
+    control_plane_fault_rate: float = 0.0
+
     # ── API ─────────────────────────────────────────────────
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"
+    # Comma-separated `key:user:role`, where role is `viewer` or `approver`.
+    api_keys: str = ""
 
-    @field_validator("failure_injection_rate")
+    @field_validator("failure_injection_rate", "control_plane_fault_rate")
     @classmethod
     def _rate_in_range(cls, v: float) -> float:
         if not 0.0 <= v <= 1.0:
-            raise ValueError(f"failure_injection_rate must be in [0, 1], got {v}")
+            raise ValueError(f"rate must be in [0, 1], got {v}")
         return v
 
-    @field_validator("max_iterations", "tool_max_retries")
+    @field_validator("max_iterations", "tool_max_retries", "action_max_attempts")
     @classmethod
     def _positive(cls, v: int) -> int:
         if v < 1:

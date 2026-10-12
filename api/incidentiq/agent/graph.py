@@ -1,29 +1,9 @@
-"""Assembling the LangGraph.
+"""The investigation graph and the runner that drives it.
 
-Why a graph rather than a while loop
-------------------------------------
-The loop this agent runs is genuinely expressible as
-`while not done: plan(); call_tool(); reflect()`. Three things make that
-insufficient here, and none of them are about elegance.
-
-1. **Checkpointing between steps.** LangGraph persists state after every node
-   transition. In a while loop the equivalent is a manual save after each step,
-   in every branch, including the error paths - and the one branch you forget is
-   the one that loses an investigation.
-
-2. **Pausing for a human and resuming later, in a different process.** The graph
-   interrupts before `act` and the run ends. Hours later a different process
-   resumes from the checkpoint with the approval decision. A while loop cannot
-   do this without being rewritten as a state machine that saves and restores
-   its own position - which is what LangGraph already is.
-
-3. **The topology is inspectable.** Nodes and edges are data, so the trace view
-   can show which node is active and the eval harness can assert on the path
-   taken. A loop's control flow only exists while it is running.
-
-The honest counter-argument: for a fixed three-step pipeline with no human in
-the loop, a while loop is simpler and the dependency is not worth it. The
-justification here rests on the interrupt and the durability, not on the loop.
+`build_graph` wires the nine nodes; the graph interrupts before `act`, so every
+write action waits for a decision with a checkpoint written. `InvestigationRunner`
+starts and resumes runs and mirrors the checkpoint into IncidentIQ's own tables
+when a run stops. Why a graph rather than a loop: docs/DESIGN.md.
 """
 
 from __future__ import annotations
@@ -66,16 +46,24 @@ def route_after_propose(state: InvestigationState) -> str:
 
 
 def route_after_act(state: InvestigationState) -> str:
-    """A rejection re-enters planning; anything else closes out.
+    """A rejection re-enters planning; a failed action waits to be retried;
+    anything else closes out.
 
-    This is what makes rejection a correction rather than a dead end - the
-    reason the human gave is already in the scratchpad, so the next `plan` sees
-    it.
+    Rejection is a correction rather than a dead end - the reason the human
+    gave is already in the scratchpad, so the next `plan` sees it.
+
+    An approved action that could not be executed routes back to `act`. The
+    graph interrupts before `act`, so the run pauses with the investigation
+    failed and its reason recorded, and a resume retries the same approval,
+    with the same idempotency key.
     """
     pending = state.get("pending_approval") or {}
     if pending.get("decision") == "rejected" and \
             state.get("iteration", 0) < state.get("max_iterations", 8):
         return "plan"
+    if pending.get("decision") in ("approved", "modified") and \
+            state.get("status") == "failed" and not state.get("action_result"):
+        return "act"
     return "summarize"
 
 
@@ -114,7 +102,7 @@ def build_graph(ctx: NodeContext, checkpointer: Any | None = None):
                             {"await_approval": "await_approval", "summarize": "summarize"})
     g.add_edge("await_approval", "act")
     g.add_conditional_edges("act", route_after_act,
-                            {"plan": "plan", "summarize": "summarize"})
+                            {"plan": "plan", "act": "act", "summarize": "summarize"})
     g.add_edge("summarize", END)
 
     return g.compile(checkpointer=checkpointer, interrupt_before=["act"])
@@ -128,7 +116,8 @@ class InvestigationRunner:
     node's failed transaction could roll back a checkpoint.
     """
 
-    def __init__(self, settings: Settings | None = None, llm=None, conn=None):
+    def __init__(self, settings: Settings | None = None, llm=None, conn=None,
+                 control_plane=None):
         from incidentiq.llm import get_llm
         from incidentiq.tools.base import FailureInjector
 
@@ -146,6 +135,7 @@ class InvestigationRunner:
             llm=llm or get_llm(self.settings),
             injector=FailureInjector(self.settings),
             tool_max_retries=self.settings.tool_max_retries,
+            control_plane=control_plane,
         )
         self._cp_conn = psycopg.connect(self.settings.database_url, autocommit=True)
         self.checkpointer = PostgresSaver(self._cp_conn)
@@ -192,9 +182,7 @@ class InvestigationRunner:
         state = initial_state(incident_id, user_query, self.settings.max_iterations)
         self._persist_start(state)
         config = {"configurable": {"thread_id": incident_id}}
-        final = self.graph.invoke(state, config)
-        self._persist(final)
-        return final
+        return self._settle(incident_id, self.graph.invoke(state, config))
 
     def reset(self, incident_id: str) -> None:
         """Discard all checkpoints and derived rows for an investigation."""
@@ -211,9 +199,74 @@ class InvestigationRunner:
         is the ordinary resume path.
         """
         config = {"configurable": {"thread_id": incident_id}}
-        final = self.graph.invoke(None, config)
+        snapshot = self.graph.get_state(config)
+        if snapshot.next == ("act",) and not self._decided(snapshot.values):
+            # Never run `act` for an undecided approval: it would find nothing
+            # to do and close the investigation without its action. Mirroring
+            # the checkpoint puts the status back to awaiting_approval.
+            log.warning("resume of %s skipped: its approval has no decision", incident_id)
+            self._persist(snapshot.values)
+            return snapshot.values
+
+        self.conn.execute(
+            "UPDATE investigations SET status = 'running', updated_at = now() WHERE id = %s",
+            (incident_id,),
+        )
+        return self._settle(incident_id, self.graph.invoke(None, config))
+
+    def resume_for_decision(self, incident_id: str, approval_id: str) -> InvestigationState:
+        """Resume because `approval_id` was decided - unless the run already
+        moved past it. A run that was still finishing when the decision came
+        consumes the decision itself (`_settle`); resuming again would act a
+        second time, for example retrying a failed action nobody asked to retry.
+        """
+        config = {"configurable": {"thread_id": incident_id}}
+        snapshot = self.graph.get_state(config)
+        values = snapshot.values or {}
+        # Consumed: the run finished, or acted on it and is paused on a failure.
+        # A run stopped earlier (a crash before await_approval was checkpointed)
+        # has not reached the approval yet and is resumed to it.
+        consumed = not snapshot.next or (snapshot.next == ("act",)
+                                         and values.get("status") != "awaiting_approval")
+        if consumed:
+            log.info("decision on %s already consumed by the run of %s", approval_id, incident_id)
+            if values:
+                self._persist(values)   # the API set `queued`; put the real status back
+            return values
+        return self.resume(incident_id)
+
+    def _settle(self, incident_id: str, final: InvestigationState) -> InvestigationState:
+        """Mirror the result, and go past an approval that is already decided.
+
+        A run can reach the interrupt before `act` with its approval decided:
+        the decision came while the run was still finishing, or the approval
+        survived a crash and was decided before recovery. Stopping there would
+        wait for a decision that already exists. A failed action also pauses
+        before `act`, but its status is `failed` and it waits for a resume.
+        """
+        config = {"configurable": {"thread_id": incident_id}}
+        while final.get("status") == "awaiting_approval" and \
+                self.next_node(incident_id) == ("act",) and self._decided(final):
+            self._persist(final)
+            before = self._checkpoint_id(config)
+            final = self.graph.invoke(None, config)
+            if self._checkpoint_id(config) == before:
+                # The graph stopped at the same interrupt without running `act`
+                # (for example a checkpoint written by an incompatible version).
+                # Looping would spin forever; fail visibly instead.
+                raise RuntimeError("resume made no progress past the approval interrupt")
         self._persist(final)
         return final
+
+    def _checkpoint_id(self, config: dict[str, Any]) -> str | None:
+        snapshot = self.graph.get_state(config)
+        return (snapshot.config or {}).get("configurable", {}).get("checkpoint_id")
+
+    def _decided(self, state: InvestigationState) -> bool:
+        approval_id = (state.get("pending_approval") or {}).get("approval_id")
+        row = self.conn.execute("SELECT decision FROM approvals WHERE id = %s",
+                                (approval_id,)).fetchone() if approval_id else None
+        return bool(row and row[0])
 
     def get_state(self, incident_id: str) -> InvestigationState | None:
         config = {"configurable": {"thread_id": incident_id}}
@@ -229,8 +282,10 @@ class InvestigationRunner:
     # ── Mirror into the human-readable tables ───────────────
     def _persist_start(self, state: InvestigationState) -> None:
         self.conn.execute(
+            # The API inserts the row as 'queued' before the worker picks it up.
             "INSERT INTO investigations (id, user_query, status) VALUES (%s, %s, %s) "
-            "ON CONFLICT (id) DO UPDATE SET user_query = EXCLUDED.user_query",
+            "ON CONFLICT (id) DO UPDATE SET user_query = EXCLUDED.user_query, "
+            "status = EXCLUDED.status, updated_at = now()",
             (state["incident_id"], state["user_query"], "running"),
         )
 
@@ -245,8 +300,8 @@ class InvestigationRunner:
 
         self.conn.execute(
             "UPDATE investigations SET status = %s, entities = %s, scratchpad = %s, "
-            "iteration = %s, retrieved_docs = %s, final_summary = %s, failure_reason = %s "
-            "WHERE id = %s",
+            "iteration = %s, retrieved_docs = %s, final_summary = %s, failure_reason = %s, "
+            "updated_at = now() WHERE id = %s",
             (
                 state.get("status", "running"),
                 json.dumps(state.get("entities") or {}, default=str),
