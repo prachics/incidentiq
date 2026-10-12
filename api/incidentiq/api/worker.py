@@ -17,9 +17,11 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 
 import psycopg
+from opentelemetry import context as otel_context
 
 from incidentiq.agent.graph import InvestigationRunner
 from incidentiq.config import get_settings
+from incidentiq.telemetry import INVESTIGATIONS_SETTLED, link_to, span, traceparent
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +32,8 @@ class Worker:
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="investigation")
         self._futures: list[Future] = []
         self._active: set[str] = set()
-        self._follow_ups: dict[str, Callable[[InvestigationRunner], object]] = {}
+        self._follow_ups: dict[str, tuple[Callable[[InvestigationRunner], object],
+                                          otel_context.Context]] = {}
         self._lock = threading.Lock()
 
     def is_active(self, investigation_id: str) -> bool:
@@ -66,7 +69,8 @@ class Worker:
 
         with self._lock:
             if investigation_id in self._active:
-                self._follow_ups[investigation_id] = job
+                # Keep the decision request's trace for when the follow-up runs.
+                self._follow_ups[investigation_id] = (job, otel_context.get_current())
                 return
         self._submit(investigation_id, job)
 
@@ -86,24 +90,41 @@ class Worker:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
     def _submit(self, investigation_id: str, job: Callable[[InvestigationRunner], object],
-                *, reserved: bool = False) -> Future | None:
+                *, reserved: bool = False,
+                parent: otel_context.Context | None = None) -> Future | None:
         """Queue a job, or return None if this investigation already has one."""
         if not reserved and not self.try_reserve(investigation_id):
             return None
 
+        # Thread pools do not carry the submitter's context, so the trace of
+        # the request that queued this job is captured here and attached there.
+        parent = parent if parent is not None else otel_context.get_current()
+
         def run() -> None:
+            token = otel_context.attach(parent)
             try:
-                with self._factory() as runner:
-                    job(runner)
+                # Each job is part of the trace of the request that queued it
+                # (a start, a decision, a resume) and links to the investigation's
+                # first job, so the segments of one investigation can be followed.
+                first = _trace_context(investigation_id)
+                with span("investigation job", links=link_to(first),
+                          **{"incidentiq.investigation_id": investigation_id}) as current:
+                    if first is None:
+                        _save_trace_context(investigation_id, traceparent(current))
+                    with self._factory() as runner:
+                        job(runner)
             except Exception as exc:  # noqa: BLE001 - a crashed job must leave a reason
                 log.exception("investigation %s crashed", investigation_id)
+                INVESTIGATIONS_SETTLED.labels("failed").inc()
                 _mark_failed(investigation_id, f"{type(exc).__name__}: {exc}")
             finally:
+                otel_context.detach(token)
                 with self._lock:
                     self._active.discard(investigation_id)
                     follow_up = self._follow_ups.pop(investigation_id, None)
                 if follow_up is not None:
-                    self._submit(investigation_id, follow_up)
+                    follow_job, follow_context = follow_up
+                    self._submit(investigation_id, follow_job, parent=follow_context)
 
         future = self._pool.submit(run)
         self._futures = [f for f in self._futures if not f.done()] + [future]
@@ -120,3 +141,22 @@ def _mark_failed(investigation_id: str, reason: str) -> None:
             )
     except psycopg.Error:
         log.exception("could not record the failure of %s", investigation_id)
+
+
+def _trace_context(investigation_id: str) -> str | None:
+    try:
+        with psycopg.connect(get_settings().database_url, autocommit=True) as conn:
+            row = conn.execute("SELECT trace_context FROM investigations WHERE id = %s",
+                               (investigation_id,)).fetchone()
+    except psycopg.Error:
+        return None
+    return row[0] if row else None
+
+
+def _save_trace_context(investigation_id: str, value: str) -> None:
+    try:
+        with psycopg.connect(get_settings().database_url, autocommit=True) as conn:
+            conn.execute("UPDATE investigations SET trace_context = %s "
+                         "WHERE id = %s AND trace_context IS NULL", (value, investigation_id))
+    except psycopg.Error:
+        log.warning("could not store the trace context of %s", investigation_id)

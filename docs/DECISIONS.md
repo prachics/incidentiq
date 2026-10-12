@@ -491,3 +491,27 @@ timeout in-process and a 504 over HTTP.
 **Reversal.** Point `CONTROL_PLANE_URL` at anything that implements
 `POST /v1/operations` with idempotency keys.
 
+---
+
+## 21. OpenTelemetry for tracing, not the Langfuse SDK
+
+**Date:** Phase 6
+
+**Decision.** Traces are OpenTelemetry, exported over OTLP to Jaeger in the
+compose stack. The Langfuse container, provisioned in Phase 1 but never
+instrumented, is removed.
+
+**Why.** The interesting trace in this system is not only the LLM calls. It is
+the API request, the worker job, the graph nodes, the tool attempts, and the
+request to the control plane, which runs in another process. OpenTelemetry
+covers all of them with one trace id and propagates across HTTP by standard
+headers; an LLM-specific SDK would see the model calls and little else. LLM spans
+still carry the GenAI semantic-convention attributes that LLM observability tools
+read, so any OTLP backend that understands them can display them.
+
+**Cost.** Jaeger shows spans, not prompt-level views or eval scoring; those stay
+in the evaluation harness.
+
+**Reversal.** Point `OTEL_EXPORTER_OTLP_ENDPOINT` at any OTLP backend, Langfuse
+included.
+

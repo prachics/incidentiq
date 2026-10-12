@@ -280,6 +280,37 @@ decision - hold within one API process. Running several API processes would
 need a per-investigation lease in Postgres (for example `SELECT … FOR UPDATE
 SKIP LOCKED` on a jobs table) in place of the in-memory set.
 
+## Observability
+
+Tracing is OpenTelemetry. A run started by one request is one trace, which takes
+three explicit pieces of plumbing:
+
+1. **Across the worker thread.** A thread pool does not carry the submitter's
+   context. The worker captures it when a job is queued and attaches it when
+   the job runs, so the job span is a child of the request that queued it. A
+   resume held as a follow-up keeps the decision request's context.
+2. **Into graph nodes.** Each node is wrapped in a span when the graph is
+   built. LangGraph copies the context into the threads it runs nodes on, so
+   node spans are children of the job span without further work.
+3. **Across the network.** Every control-plane attempt is a client span whose
+   context is injected as `traceparent`; the control plane's FastAPI
+   instrumentation extracts it, so its request span is a child of that attempt.
+
+An investigation that waits for a human spans several requests: the start, the
+decision, perhaps a resume after a crash. Each continues in the trace of its own
+request, because that is the request someone will be debugging. The first job's
+`traceparent` is stored on the investigation, and every later job span carries a
+span link to it, so the segments of one investigation can be followed from any of
+them.
+
+Failures stay visible. A node that handled a failure (retrieval down, an action
+that failed validation) returns normally but its span is set to error with the
+reason; node and LLM durations are recorded in `finally`, labelled by outcome, so
+a timeout is measured rather than dropped; a crashed job counts as a failed run.
+
+Spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Metrics are
+Prometheus counters and histograms, recorded regardless, at `/metrics`.
+
 ## Known failure modes
 
 Found by running the system, not by inspection.

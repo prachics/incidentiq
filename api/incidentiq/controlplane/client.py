@@ -16,9 +16,11 @@ from typing import Any
 
 import httpx
 import psycopg
+from opentelemetry.trace import SpanKind
 
 from incidentiq.config import Settings, get_settings
 from incidentiq.controlplane.service import ControlPlane, FaultPlan, LostResponse
+from incidentiq.telemetry import fail, inject_headers, span
 
 log = logging.getLogger(__name__)
 
@@ -72,28 +74,51 @@ class ControlPlaneClient:
 
     def submit(self, operation: str, params: dict[str, Any], *,
                idempotency_key: str) -> Submission:
+        with span(f"control_plane {operation}", **{
+            "incidentiq.operation": operation,
+            "incidentiq.idempotency_key": idempotency_key,
+        }) as outer:
+            try:
+                sent = self._submit(operation, params, idempotency_key)
+            except ControlPlaneError as exc:
+                outer.set_attribute("incidentiq.attempts", exc.attempts)
+                fail(outer, str(exc))
+                raise
+            outer.set_attribute("incidentiq.attempts", sent.attempts)
+            outer.set_attribute("incidentiq.replayed", sent.replayed)
+            return sent
+
+    def _submit(self, operation: str, params: dict[str, Any],
+                idempotency_key: str) -> Submission:
         errors: list[str] = []
         for attempt in range(1, self.max_attempts + 1):
-            try:
-                r = self.http.post(
-                    "/v1/operations",
-                    json={"operation": operation, "params": params},
-                    headers={"Idempotency-Key": idempotency_key},
-                )
-            except httpx.TransportError as exc:
-                errors.append(f"attempt {attempt}: {type(exc).__name__}: {exc}")
-            else:
-                if r.status_code < 300:
-                    return Submission(
-                        body=r.json(), attempts=attempt, errors=errors,
-                        replayed=r.headers.get("Idempotent-Replay") == "true",
+            # One client span per attempt; its context travels in `traceparent`,
+            # so the control plane's server span joins this trace.
+            with span("POST /v1/operations", kind=SpanKind.CLIENT,
+                      **{"http.request.method": "POST", "incidentiq.attempt": attempt}) as current:
+                try:
+                    r = self.http.post(
+                        "/v1/operations",
+                        json={"operation": operation, "params": params},
+                        headers=inject_headers({"Idempotency-Key": idempotency_key}),
                     )
-                detail = _error_detail(r)
-                errors.append(f"attempt {attempt}: HTTP {r.status_code}: {detail}")
-                if not _retryable_status(r.status_code):
-                    raise ControlPlaneError(
-                        f"control plane refused {operation}: HTTP {r.status_code} {detail}",
-                        attempts=attempt, retryable=False, errors=errors)
+                except httpx.TransportError as exc:
+                    errors.append(f"attempt {attempt}: {type(exc).__name__}: {exc}")
+                    fail(current, str(exc) or type(exc).__name__, error_type=type(exc).__name__)
+                else:
+                    current.set_attribute("http.response.status_code", r.status_code)
+                    if r.status_code < 300:
+                        return Submission(
+                            body=r.json(), attempts=attempt, errors=errors,
+                            replayed=r.headers.get("Idempotent-Replay") == "true",
+                        )
+                    detail = _error_detail(r)
+                    errors.append(f"attempt {attempt}: HTTP {r.status_code}: {detail}")
+                    fail(current, f"HTTP {r.status_code}", error_type=str(r.status_code))
+                    if not _retryable_status(r.status_code):
+                        raise ControlPlaneError(
+                            f"control plane refused {operation}: HTTP {r.status_code} {detail}",
+                            attempts=attempt, retryable=False, errors=errors)
 
             if attempt < self.max_attempts:
                 delay = self.backoff_s * 2 ** (attempt - 1)

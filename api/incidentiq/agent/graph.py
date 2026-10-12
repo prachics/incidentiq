@@ -9,6 +9,7 @@ after every node. Why a graph rather than a loop: docs/DESIGN.md.
 from __future__ import annotations
 
 import logging
+import time
 from functools import partial
 from typing import Any
 
@@ -20,6 +21,13 @@ from incidentiq.agent import nodes
 from incidentiq.agent.nodes import NodeContext
 from incidentiq.agent.state import InvestigationState
 from incidentiq.config import Settings, get_settings
+from incidentiq.telemetry import (
+    INVESTIGATIONS_SETTLED,
+    INVESTIGATIONS_STARTED,
+    NODE_SECONDS,
+    fail,
+    span,
+)
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +75,32 @@ def route_after_act(state: InvestigationState) -> str:
     return "summarize"
 
 
+def traced(name: str, node: Any) -> Any:
+    """Wrap a node in a span and time it. A node that handled a failure
+    (`ok: False` on its event) returns normally but its span is marked as an
+    error, and its duration is recorded whatever the outcome."""
+    def run(state: InvestigationState) -> dict[str, Any]:
+        attributes = {"incidentiq.node": name,
+                      "incidentiq.investigation_id": state.get("incident_id")}
+        started, outcome = time.perf_counter(), "error"
+        try:
+            with span(f"node {name}", **attributes) as current:
+                delta = node(state)
+                events = (delta or {}).get("events") or [{}]
+                ok = events[-1].get("ok", True)
+                current.set_attribute("incidentiq.node.ok", bool(ok))
+                if ok is False:
+                    reason = (delta.get("failure_reason")
+                              or ((delta.get("scratchpad") or [""])[-1])
+                              or f"{name} reported a failure")
+                    fail(current, reason, error_type=f"{name}_failed")
+                outcome = "ok" if ok is not False else "handled_failure"
+            return delta
+        finally:
+            NODE_SECONDS.labels(name, outcome).observe(time.perf_counter() - started)
+    return run
+
+
 def build_graph(ctx: NodeContext, checkpointer: Any | None = None):
     """Wire the nine nodes together.
 
@@ -76,15 +110,15 @@ def build_graph(ctx: NodeContext, checkpointer: Any | None = None):
     """
     g = StateGraph(InvestigationState)
 
-    g.add_node("intake", partial(nodes.intake, ctx=ctx))
-    g.add_node("retrieve", partial(nodes.retrieve, ctx=ctx))
-    g.add_node("plan", partial(nodes.plan, ctx=ctx))
-    g.add_node("execute_tool", partial(nodes.execute_tool_node, ctx=ctx))
-    g.add_node("reflect", partial(nodes.reflect, ctx=ctx))
-    g.add_node("propose", partial(nodes.propose, ctx=ctx))
-    g.add_node("await_approval", partial(nodes.await_approval, ctx=ctx))
-    g.add_node("act", partial(nodes.act, ctx=ctx))
-    g.add_node("summarize", partial(nodes.summarize, ctx=ctx))
+    g.add_node("intake", traced("intake", partial(nodes.intake, ctx=ctx)))
+    g.add_node("retrieve", traced("retrieve", partial(nodes.retrieve, ctx=ctx)))
+    g.add_node("plan", traced("plan", partial(nodes.plan, ctx=ctx)))
+    g.add_node("execute_tool", traced("execute_tool", partial(nodes.execute_tool_node, ctx=ctx)))
+    g.add_node("reflect", traced("reflect", partial(nodes.reflect, ctx=ctx)))
+    g.add_node("propose", traced("propose", partial(nodes.propose, ctx=ctx)))
+    g.add_node("await_approval", traced("await_approval", partial(nodes.await_approval, ctx=ctx)))
+    g.add_node("act", traced("act", partial(nodes.act, ctx=ctx)))
+    g.add_node("summarize", traced("summarize", partial(nodes.summarize, ctx=ctx)))
 
     g.add_edge(START, "intake")
     g.add_edge("intake", "retrieve")
@@ -93,7 +127,7 @@ def build_graph(ctx: NodeContext, checkpointer: Any | None = None):
     # Re-retrieve after each tool call: Phase 2 measured retrieval improving
     # from 0.461 to 0.800 once observed error signatures are in the query.
     g.add_edge("execute_tool", "retrieve_again")
-    g.add_node("retrieve_again", partial(nodes.retrieve, ctx=ctx))
+    g.add_node("retrieve_again", traced("retrieve_again", partial(nodes.retrieve, ctx=ctx)))
     g.add_edge("retrieve_again", "reflect")
 
     g.add_conditional_edges("reflect", route_after_reflect,
@@ -181,6 +215,7 @@ class InvestigationRunner:
 
         state = initial_state(incident_id, user_query, self.settings.max_iterations)
         self._persist_start(state)
+        INVESTIGATIONS_STARTED.inc()
         config = {"configurable": {"thread_id": incident_id}}
         return self._settle(incident_id, self._advance(config, state))
 
@@ -268,6 +303,7 @@ class InvestigationRunner:
                 # Looping would spin forever; fail visibly instead.
                 raise RuntimeError("resume made no progress past the approval interrupt")
         self._persist(final)
+        INVESTIGATIONS_SETTLED.labels(final.get("status", "unknown")).inc()
         return final
 
     def _checkpoint_id(self, config: dict[str, Any]) -> str | None:

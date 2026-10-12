@@ -15,13 +15,16 @@ from typing import Any
 
 import psycopg
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from incidentiq.api import approvals, investigations
 from incidentiq.api.auth import Viewer, parse_api_keys
 from incidentiq.api.worker import Worker
 from incidentiq.config import get_settings
+from incidentiq.telemetry import setup_tracing
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +58,19 @@ app = FastAPI(
 )
 app.include_router(investigations.router)
 app.include_router(approvals.router)
+
+setup_tracing("incidentiq-api", get_settings().otel_exporter_otlp_endpoint)
+# Server spans for every request except the probes and the scrape. The list is
+# regexes searched in the full URL, so they are anchored to the exact paths: a
+# plain "metrics" would also drop /investigations/IQ-metrics-1/resume.
+OPERATIONAL_PATHS = r"://[^/]+/(?:healthz|readyz|metrics)/?(?:\?.*)?$"
+FastAPIInstrumentor.instrument_app(app, excluded_urls=OPERATIONAL_PATHS)
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    """Prometheus exposition format. Counts and latencies only, no payloads."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/me", tags=["session"])

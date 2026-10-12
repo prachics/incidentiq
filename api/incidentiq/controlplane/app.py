@@ -16,14 +16,19 @@ from typing import Any
 import psycopg
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel, Field
 
 from incidentiq.config import get_settings
 from incidentiq.controlplane.service import ControlPlane, FaultPlan, LostResponse
+from incidentiq.telemetry import setup_tracing
 
 app = FastAPI(title="IncidentIQ mock control plane", version="0.1.0")
 
 _settings = get_settings()
+setup_tracing("incidentiq-control-plane", _settings.otel_exporter_otlp_endpoint)
+# Extracts `traceparent`, so each request continues the caller's trace.
+FastAPIInstrumentor.instrument_app(app, excluded_urls=r"://[^/]+/healthz/?(?:\?.*)?$")
 # One plan for the process, so request counts per key survive across requests.
 _faults = FaultPlan.seeded(_settings.control_plane_fault_rate,
                            _settings.failure_injection_seed)

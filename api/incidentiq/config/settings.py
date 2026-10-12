@@ -40,10 +40,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
 
     # ── Observability ───────────────────────────────────────
-    langfuse_enabled: bool = False
-    langfuse_host: str = "http://localhost:3001"
-    langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
+    # OTLP/HTTP base URL, e.g. http://localhost:4318. Empty: no traces exported.
+    otel_exporter_otlp_endpoint: str = ""
 
     # ── Agent behaviour ─────────────────────────────────────
     max_iterations: int = 8

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from incidentiq.api.auth import Approver, Viewer
 from incidentiq.api.deps import DB, Jobs
+from incidentiq.telemetry import DECISIONS
 from incidentiq.tools import registry
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -115,6 +116,7 @@ def decide(approval_id: str, body: DecisionIn, conn: DB, who: Approver,
         # client polling for the result would otherwise stop watching.
         conn.execute("UPDATE investigations SET status = 'queued', updated_at = now() "
                      "WHERE id = %s", (row["investigation_id"],))
+    DECISIONS.labels(decision).inc()
     jobs.resume_after_decision(row["investigation_id"], approval_id)
     return {
         "approval_id": approval_id,

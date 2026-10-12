@@ -32,6 +32,7 @@ from incidentiq.agent.schemas import (
 )
 from incidentiq.agent.state import InvestigationState
 from incidentiq.llm.base import LLMProvider, LLMResponse, extract_json
+from incidentiq.telemetry import LLM_SECONDS, LLM_TOKENS, span
 from incidentiq.tools import ToolStatus, execute_tool, registry
 from incidentiq.tools.base import FailureInjector
 
@@ -81,11 +82,32 @@ def _ask_json(
     the local-model path fail for formatting reasons rather than reasoning ones,
     which would make the local-vs-frontier comparison measure the wrong thing.
     """
-    resp = ctx.llm.complete_json(
-        system, [{"role": "user", "content": user}],
-        max_tokens=max_tokens,
-        schema=schema_of(model) if model else None,
-    )
+    node = model.__name__.removesuffix("Out").lower() if model else "unknown"
+    model_name = ctx.llm.model_name
+    # Span attributes follow the OpenTelemetry GenAI semantic conventions.
+    started, outcome = time.perf_counter(), "error"
+    try:
+        with span(f"chat {model_name}", **{
+            "gen_ai.operation.name": "chat",
+            "gen_ai.request.model": model_name,
+            "gen_ai.request.max_tokens": max_tokens,
+            "incidentiq.node": node,
+        }) as current:
+            resp = ctx.llm.complete_json(
+                system, [{"role": "user", "content": user}],
+                max_tokens=max_tokens,
+                schema=schema_of(model) if model else None,
+            )
+            current.set_attribute("gen_ai.usage.input_tokens", resp.input_tokens)
+            current.set_attribute("gen_ai.usage.output_tokens", resp.output_tokens)
+            if resp.stop_reason:
+                current.set_attribute("gen_ai.response.finish_reasons", [resp.stop_reason])
+            outcome = "ok"
+    finally:
+        # Timed whatever happens: a provider timeout is the latency that matters most.
+        LLM_SECONDS.labels(model_name, node, outcome).observe(time.perf_counter() - started)
+    LLM_TOKENS.labels(model_name, "input").inc(resp.input_tokens)
+    LLM_TOKENS.labels(model_name, "output").inc(resp.output_tokens)
     parsed = extract_json(resp.text)
     if parsed is None or model is None:
         return parsed, resp

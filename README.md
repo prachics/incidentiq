@@ -12,7 +12,7 @@ is persisted and survives process death**, **write actions are gated
 structurally rather than by prompt**, and **there is an evaluation harness that
 produces real numbers, including bad ones.**
 
-**Status:** Phases 1–5 complete and measured: the agent, its evaluation, an approval API and a web UI.
+**Status:** Phases 1–6 complete and measured: the agent, its evaluation, an approval API, a web UI, and tracing.
 Every number below comes from the harness in this repository and can be
 reproduced with the commands given.
 
@@ -73,7 +73,7 @@ number.
 Optional services:
 
 ```bash
-docker compose up -d langfuse      # tracing UI at :3001 (schema ready, not yet instrumented)
+docker compose up -d jaeger        # traces: set OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318, open :16686
 docker compose --profile app up -d # API at :8000, mock control plane at :8100
 ```
 
@@ -300,6 +300,30 @@ key lives in `sessionStorage`, not `localStorage`.
 
 ---
 
+## Observability
+
+**One request, one trace; one investigation, linked traces.** Starting an
+investigation produces one trace: the request, the worker job, every graph node in
+order, and every tool attempt and LLM call under its node. The worker carries the
+context across its thread, and the control plane continues it from the
+`traceparent` header, so an approved action's HTTP call is in the trace too. A
+decision or a resume later runs in the trace of *that* request, and its job span
+links back to the investigation's first job. LLM spans follow the OpenTelemetry
+GenAI conventions (`gen_ai.request.model`, `gen_ai.usage.*_tokens`); each retry is
+its own span; a node that handled a failure is still an error span, with the reason.
+
+```bash
+docker compose up -d jaeger
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 uvicorn incidentiq.api.main:app
+open http://localhost:16686        # service: incidentiq-api
+```
+
+**Metrics** at `GET /metrics` (Prometheus): runs started and settled by status
+(crashed runs included), time per node and LLM latency by outcome (failures are
+timed too), tool attempts by tool and status, tokens per model, approved actions
+by outcome (executed, already executed, failed, invalid arguments) with the
+attempts each took, and approval decisions.
+
 ## Seeded data
 
 The corpus is synthetic but not random. Every incident is one of **16 failure
@@ -391,18 +415,14 @@ is more often a broken expectation than a broken model.
 | 3 | LangGraph agent, state persistence, tools, retry logic, evaluation harness | **complete** |
 | 4 | Approval API, audit trail, API keys, actions executed exactly once via a mock control plane | **complete** |
 | 5 | Web UI: investigations, live timeline, evidence, approvals, audit log | **complete** |
-| 6 | MCP server exposing the diagnostic tools | not started |
-
-Langfuse is provisioned in Docker Compose and configured in settings, but the
-agent is **not yet instrumented** to emit traces to it. Per-node timings, token
-counts and retry counts are recorded in the investigation state and in the
-`tool_calls` table today.
+| 6 | Tracing and metrics: OpenTelemetry traces across threads and HTTP, linked per investigation; Prometheus | **complete** |
+| 7 | MCP server exposing the diagnostic tools | not started |
 
 ---
 
 ## Testing
 
-300 backend tests and 22 frontend tests. Beyond the usual unit coverage, four areas are tested specifically:
+315 backend tests and 22 frontend tests. Beyond the usual unit coverage, four areas are tested specifically:
 
 - **State recovery.** A test kills a run mid-investigation, constructs a
   completely fresh runner sharing nothing but the database, resumes it, and
@@ -456,7 +476,7 @@ Tests that need Postgres skip cleanly when it is unavailable.
 | Embeddings | `BAAI/bge-small-en-v1.5`, 384-dimensional, local |
 | LLM | Swappable: Ollama (local, default), Anthropic, deterministic stub |
 | Packaging | Docker Compose |
-| Tracing | Langfuse (provisioned; instrumentation pending) |
+| Observability | OpenTelemetry (OTLP → Jaeger), Prometheus metrics |
 | Frontend | React 18, TypeScript (strict), Vite, TanStack Query, Tailwind, Vitest |
 
 ---

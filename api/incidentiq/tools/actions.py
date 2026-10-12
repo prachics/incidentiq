@@ -18,6 +18,7 @@ import psycopg
 from pydantic import BaseModel, Field, field_validator
 
 from incidentiq.controlplane import ControlPlaneClient, ControlPlaneError
+from incidentiq.telemetry import ACTION_ATTEMPTS, ACTIONS
 from incidentiq.tools.base import Tool, ToolError, ToolStatus, registry
 
 APPROVED_DECISIONS = ("approved", "modified")
@@ -267,10 +268,17 @@ def execute_action(
         (approval_id,),
     ).fetchone()
     if done:
+        ACTIONS.labels(tool.name, "already_executed").inc()
         return {**done[0], "execution": {**done[0]["execution"], "already_executed": True}}
 
-    args = tool.validate_args(effective)
-    request = tool.run(conn, args)
+    try:
+        args = tool.validate_args(effective)
+        request = tool.run(conn, args)
+    except ToolError:
+        # Arguments that fail validation, or name something that does not
+        # exist, never reach the control plane; counted so they are visible.
+        ACTIONS.labels(tool.name, "invalid_arguments").inc()
+        raise
 
     client = control_plane or ControlPlaneClient.from_settings(conn)
     try:
@@ -279,10 +287,14 @@ def execute_action(
     except ControlPlaneError as exc:
         _record(conn, investigation_id, approval_id, tool.name, effective,
                 outcome="failed", attempts=exc.attempts, error="; ".join(exc.errors))
+        ACTIONS.labels(tool.name, "failed").inc()
+        ACTION_ATTEMPTS.labels(tool.name).observe(exc.attempts)
         raise ToolError(str(exc), status=ToolStatus.FAILED) from exc
     finally:
         if control_plane is None:
             client.close()
+    ACTIONS.labels(tool.name, "executed").inc()
+    ACTION_ATTEMPTS.labels(tool.name).observe(sent.attempts)
 
     result = {
         **request,

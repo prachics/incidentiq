@@ -38,6 +38,7 @@ import psycopg
 from pydantic import BaseModel, ValidationError
 
 from incidentiq.config import Settings, get_settings
+from incidentiq.telemetry import TOOL_CALLS, fail, span
 
 log = logging.getLogger(__name__)
 
@@ -209,7 +210,29 @@ def execute_tool(
     injector: FailureInjector | None = None,
 ) -> ToolResult:
     """Run one tool once, with failure injection and timing. No retries here -
-    retry policy belongs to the caller, which is what makes it testable."""
+    retry policy belongs to the caller, which is what makes it testable.
+    Each attempt is its own span, so retries are visible in the trace."""
+    with span(f"tool {tool.name}", **{"incidentiq.tool": tool.name,
+                                      "incidentiq.tool.attempt": attempt}) as current:
+        result = _execute_tool(conn, tool, raw_args, investigation_id=investigation_id,
+                               attempt=attempt, injector=injector)
+        current.set_attribute("incidentiq.tool.status", result.status.value)
+        current.set_attribute("incidentiq.tool.injected_failure", result.injected_failure)
+        if not result.ok:
+            fail(current, result.error or result.status.value)
+    TOOL_CALLS.labels(tool.name, result.status.value).inc()
+    return result
+
+
+def _execute_tool(
+    conn: psycopg.Connection,
+    tool: Tool,
+    raw_args: dict[str, Any],
+    *,
+    investigation_id: str,
+    attempt: int,
+    injector: FailureInjector | None,
+) -> ToolResult:
     injector = injector or FailureInjector()
     started = time.perf_counter()
 
