@@ -345,7 +345,6 @@ Tests that need Postgres skip cleanly when it is unavailable.
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Why LangGraph over a plain loop (with the counter-argument), retry classification, failure injection, known failure modes, what breaks at 100× scale |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Running log of every non-obvious choice, what it cost, and how to reverse it |
 | [`docs/EVALS.md`](docs/EVALS.md) | Evaluation methodology, ablations, per-run results, and stated limitations |
-| [`docs/LEARN/`](docs/LEARN/) | Plain-English explainers for every concept the project introduces |
 
 ---
 
