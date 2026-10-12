@@ -80,9 +80,13 @@ tools available. Choose ONE tool and its arguments.
 A productive order in most investigations:
 1. `get_service_logs` - the error signature usually names the failure mode
 2. `search_similar_incidents` - quote the exact error strings you just saw
-3. `get_metrics` - confirm the metric that failure mode would move
+3. `get_metrics` without a metric_name - see which metrics moved, largest change first
 4. `get_recent_deploys` - a sharp onset that coincides with a release is the release
 5. `get_service_dependencies` - when the service looks healthy but is slow
+
+When the evidence points at another service (timeouts calling it, its name in the
+errors), that service is the next one to examine: `get_metrics` without a
+metric_name on it, then its logs. In a cascade the cause is at the bottom.
 
 Do not repeat a call you have already made with the same arguments. If a call
 failed, either retry it or try a different approach - but say which in your
@@ -103,6 +107,7 @@ TASK: Decide whether you have enough evidence to propose a remediation.
 
 Consider:
 - Do you know which service is the actual cause, not just which is affected?
+  If the evidence points at a dependency you have not examined yet, you do not.
 - Do you know the mechanism, or only the symptom?
 - Did any tool return a PARTIAL result? Partial data is incomplete data;
   conclusions drawn from it may be based on evidence you were not shown.
@@ -244,3 +249,9 @@ def render_scratchpad(scratchpad: list[str], limit: int = 12) -> str:
     if not scratchpad:
         return "(no reasoning recorded yet)"
     return "\n".join(f"- {s}" for s in scratchpad[-limit:])
+
+
+FIX_ARGUMENTS = """You correct the arguments of a remediation an incident agent proposed.
+The arguments failed validation. Fix only what the problem names, using values that
+appear in the tool results or the problem message (for example a version listed as
+known). Never invent a value. Return JSON: {"remediation_arguments": {...}}."""

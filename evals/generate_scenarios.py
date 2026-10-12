@@ -35,6 +35,7 @@ sys.path.insert(0, str(REPO_ROOT / "seeds"))
 import archetypes as A  # noqa: E402
 import catalog as C  # noqa: E402
 
+from evals import mechanism  # noqa: E402
 from evals.scenario import Scenario, breakdown, save_scenarios  # noqa: E402
 
 SEED = 31337
@@ -106,48 +107,11 @@ UNKNOWN_TOPICS = [
 ]
 
 
-def _archetype_keywords(arch: A.Archetype, n: int = 12) -> list[str]:
-    """Grading vocabulary for an archetype, pooled across ALL its variants.
-
-    This started as keywords from the one root-cause variant the scenario
-    happened to draw, and that was wrong in a way worth recording. Each
-    archetype has two narratives for the same failure - `disk_full` is either
-    "WAL segments accumulated because archiving was failing" or "autovacuum
-    could not keep up and dead tuples filled the volume". The corpus contains
-    both. An agent that correctly diagnoses disk exhaustion on the right service
-    and describes the *other* variant is right, and was being scored 0/5.
-
-    So the ground truth is the archetype, which is determinate, rather than the
-    particular narrative, which is not. Keywords are pooled from every variant
-    plus the archetype's tags, and grading asks for a couple of hits rather than
-    a proportion of a set whose size now varies.
-    """
-    pool = " ".join(arch.root_cause) + " " + " ".join(arch.tags) + " " + arch.name
-    return _keywords(pool, n) + [t for t in arch.tags if len(t) > 3]
-
-
-def _keywords(text: str, n: int = 5) -> list[str]:
-    """Distinctive words from text, used for grading.
-
-    Stopwords and short words removed; the remainder are terms the agent should
-    plausibly use if it identified the same mechanism.
-    """
-    stop = {
-        "the", "and", "was", "were", "had", "has", "that", "this", "with", "from",
-        "into", "than", "then", "which", "while", "because", "could", "would",
-        "their", "there", "been", "being", "when", "what", "have", "each", "over",
-        "under", "every", "some", "more", "most", "other", "after", "before",
-        "service", "requests", "request",
-    }
-    words = [w.strip(".,;:()'\"").lower() for w in text.split()]
-    seen, out = set(), []
-    for w in words:
-        if len(w) > 5 and w not in stop and w.isalpha() and w not in seen:
-            seen.add(w)
-            out.append(w)
-        if len(out) == n:
-            break
-    return out
+def _archetype_keywords(arch: A.Archetype) -> list[str]:
+    """Grading vocabulary: the words only this archetype uses, across all its
+    narratives (evals/mechanism.py). An agent that diagnoses the right failure
+    through the other narrative is right, so no single narrative is the key."""
+    return list(mechanism.VOCABULARY[arch.key])
 
 
 EXCLUDED = _live_situation_services()
@@ -283,7 +247,7 @@ def gen_approval_required(r: random.Random, n: int) -> list[Scenario]:
         svc, arch = r.choice(candidates)
         dep = _pick_dep(r, svc, arch)
         cause = _render(arch, svc, dep, r)
-        decision = "reject" if i % 3 == 2 else "approve"
+        decision = ("approve", "modify", "reject")[i % 3]
         out.append(Scenario(
             id=f"SC-AP-{i + 1:03d}", kind="approval_required",
             query=r.choice(PHRASINGS).format(svc=svc.name),

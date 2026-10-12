@@ -8,6 +8,7 @@ not a change to the agent.
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -131,12 +132,14 @@ class GetServiceLogs(Tool):
 # ── get_metrics ─────────────────────────────────────────────
 class MetricsArgs(_WindowMixin):
     service: str = Field(min_length=1, description="Exact service name.")
-    metric_name: str = Field(
+    metric_name: str | None = Field(
+        default=None,
         description=(
-            "One of: error_rate, latency_p99_ms, cpu_pct, memory_usage_pct, "
+            "Omit to see every metric the service reports and how much each moved. "
+            "Or one of: error_rate, latency_p99_ms, cpu_pct, memory_usage_pct, "
             "db_pool_active_connections, disk_usage_pct, replication_lag_seconds, "
             "cache_hit_rate, consumer_lag_messages, thread_pool_active, "
-            "unassigned_shards, under_replicated_partitions."
+            "unassigned_shards, under_replicated_partitions, for its hourly series."
         )
     )
 
@@ -144,9 +147,10 @@ class MetricsArgs(_WindowMixin):
 class GetMetrics(Tool):
     name = "get_metrics"
     description = (
-        "Fetch a metric time series for a service, bucketed hourly, with a comparison "
-        "against the preceding period. Use this to confirm whether a metric actually "
-        "changed rather than trusting a single reading."
+        "Without metric_name: every metric the service reports, its latest hour against "
+        "the same hour yesterday, largest change first - which metrics moved. With "
+        "metric_name: that metric's hourly series over time_window, against the "
+        "preceding period of the same length."
     )
     args_model = MetricsArgs
 
@@ -161,44 +165,87 @@ class GetMetrics(Tool):
                 (args.service,),
             ).fetchall()
         ]
+        if args.metric_name is None:
+            # The model used to guess one metric, usually latency, and miss the
+            # one the failure moved (disk usage on a full database, CPU in a surge).
+            moved = [self._versus_yesterday(conn, args.service, name)
+                     for name in sorted(available)]
+            moved.sort(key=_moved, reverse=True)
+            return {"service": args.service, "metrics": moved}
         if args.metric_name not in available:
             raise ToolError(
                 f"metric {args.metric_name!r} is not collected for {args.service}. "
                 f"Available: {', '.join(sorted(available))}",
                 status=ToolStatus.MALFORMED,   # wrong argument, not a transient fault
             )
-
-        series = conn.execute(
-            "SELECT date_trunc('hour', ts) AS bucket, avg(value), min(value), max(value) "
-            "FROM metric_points WHERE service = %s AND metric_name = %s AND ts >= %s "
-            "GROUP BY bucket ORDER BY bucket",
-            (args.service, args.metric_name, since),
-        ).fetchall()
-
-        baseline = conn.execute(
-            "SELECT avg(value) FROM metric_points "
-            "WHERE service = %s AND metric_name = %s AND ts >= %s AND ts < %s",
-            (args.service, args.metric_name, since - window, since),
-        ).fetchone()[0]
-
-        current = series[-1][1] if series else None
-        change = None
-        if baseline and current is not None:
-            change = round((current - baseline) / abs(baseline) * 100, 1)
-
+        summary, series = self._measure(conn, args.service, args.metric_name, since, window)
         return {
             "service": args.service,
-            "metric_name": args.metric_name,
             "time_window": args.time_window,
-            "baseline_previous_period": round(baseline, 4) if baseline else None,
-            "current_value": round(current, 4) if current is not None else None,
-            "pct_change_vs_baseline": change,
+            **summary,
             "series": [
                 {"hour": b.isoformat(), "avg": round(a, 4),
                  "min": round(mn, 4), "max": round(mx, 4)}
                 for b, a, mn, mx in series
             ],
         }
+
+    @staticmethod
+    def _versus_yesterday(conn: psycopg.Connection, service: str, name: str) -> dict[str, Any]:
+        """The latest hour against the same hour a day earlier, which a daily
+        cycle does not move and an incident that began hours ago has not reached."""
+        now, yesterday = conn.execute(
+            "SELECT avg(value) FILTER (WHERE ts >= %(now)s - interval '1 hour'), "
+            "avg(value) FILTER (WHERE ts >= %(now)s - interval '25 hours' "
+            "                   AND ts < %(now)s - interval '24 hours') "
+            "FROM metric_points WHERE service = %(service)s AND metric_name = %(name)s "
+            "AND ts >= %(now)s - interval '25 hours' AND ts < %(now)s",
+            {"now": DATA_NOW, "service": service, "name": name},
+        ).fetchone()
+        # A zero yesterday is a reading (a rise from it has no percentage); a missing
+        # one is no reading at all.
+        change = None
+        if yesterday and now is not None:
+            change = round((now - yesterday) / abs(yesterday) * 100, 1)
+        return {"metric_name": name,
+                "latest_hour": round(now, 4) if now is not None else None,
+                "same_hour_yesterday": round(yesterday, 4) if yesterday is not None else None,
+                "pct_change_vs_yesterday": change}
+
+    @staticmethod
+    def _measure(conn: psycopg.Connection, service: str, name: str, since: Any,
+                 window: Any) -> tuple[dict[str, Any], list[tuple]]:
+        """The metric's latest hour against its average over the preceding period."""
+        series = conn.execute(
+            "SELECT date_trunc('hour', ts) AS bucket, avg(value), min(value), max(value) "
+            "FROM metric_points WHERE service = %s AND metric_name = %s AND ts >= %s "
+            "GROUP BY bucket ORDER BY bucket",
+            (service, name, since),
+        ).fetchall()
+        baseline = conn.execute(
+            "SELECT avg(value) FROM metric_points "
+            "WHERE service = %s AND metric_name = %s AND ts >= %s AND ts < %s",
+            (service, name, since - window, since),
+        ).fetchone()[0]
+        current = series[-1][1] if series else None
+        change = None
+        if baseline and current is not None:
+            change = round((current - baseline) / abs(baseline) * 100, 1)
+        return {
+            "metric_name": name,
+            "baseline_previous_period": round(baseline, 4) if baseline is not None else None,
+            "current_value": round(current, 4) if current is not None else None,
+            "pct_change_vs_baseline": change,
+        }, series
+
+
+def _moved(metric: dict[str, Any]) -> float:
+    """How far a metric moved; a metric that was zero yesterday and is not now
+    (unassigned shards, say) moved further than any percentage. One with no reading
+    yesterday has nothing to have moved from."""
+    if metric["pct_change_vs_yesterday"] is not None:
+        return abs(metric["pct_change_vs_yesterday"])
+    return math.inf if metric["same_hour_yesterday"] == 0 and metric["latest_hour"] else 0.0
 
 
 # ── get_recent_deploys ──────────────────────────────────────
@@ -311,14 +358,16 @@ class SearchSimilarIncidents(Tool):
         "Every claim you make should be traceable to something this returns."
     )
     args_model = SimilarIncidentsArgs
+    uses_embeddings = True
 
-    def run(self, conn: psycopg.Connection, args: SimilarIncidentsArgs) -> dict[str, Any]:
+    def run(self, conn: psycopg.Connection, args: SimilarIncidentsArgs,
+            embeddings: Any = None) -> dict[str, Any]:
         from incidentiq.rag.retrieval import Filters, hydrate, search
 
         hits = hydrate(conn, search(
             conn, args.query,
             filters=Filters(service=args.service) if args.service else None,
-            limit=args.limit, mode="hybrid",
+            limit=args.limit, mode="hybrid", provider=embeddings,
         ))
         return {
             "query": args.query,

@@ -71,11 +71,13 @@ class OllamaProvider(LLMProvider):
     for reasons that have nothing to do with reasoning quality.
     """
 
-    def __init__(self, base_url: str, model: str, timeout: float = 180.0):
+    def __init__(self, base_url: str, model: str, timeout: float = 180.0,
+                 seed: int | None = None):
         import httpx
 
         self._client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
         self._model = model
+        self._seed = seed
 
     @property
     def model_name(self) -> str:
@@ -103,6 +105,8 @@ class OllamaProvider(LLMProvider):
             "stream": False,
             "options": {"num_predict": max_tokens, "temperature": 0.1},
         }
+        if self._seed is not None:
+            payload["options"]["seed"] = self._seed
         if schema is not None:
             # A full JSON Schema constrains the *shape*, not just the syntax.
             # Ollama compiles it to a grammar and restricts the sampler to
@@ -220,11 +224,11 @@ class StubProvider(LLMProvider):
 
 
 @lru_cache(maxsize=3)
-def _build(provider: str, model: str, key_or_url: str) -> LLMProvider:
+def _build(provider: str, model: str, key_or_url: str, seed: int | None = None) -> LLMProvider:
     if provider == "anthropic":
         return AnthropicProvider(key_or_url, model)
     if provider == "ollama":
-        return OllamaProvider(key_or_url, model)
+        return OllamaProvider(key_or_url, model, seed=seed)
     if provider == "stub":
         return StubProvider()
     raise ValueError(f"unknown llm provider {provider!r}")
@@ -236,5 +240,5 @@ def get_llm(settings: Settings | None = None) -> LLMProvider:
     if s.llm_provider == "anthropic":
         return _build("anthropic", s.anthropic_model, s.anthropic_api_key)
     if s.llm_provider == "ollama":
-        return _build("ollama", s.ollama_model, s.ollama_base_url)
+        return _build("ollama", s.ollama_model, s.ollama_base_url, s.llm_seed)
     return StubProvider()

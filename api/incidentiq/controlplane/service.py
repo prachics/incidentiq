@@ -50,21 +50,26 @@ class Reply:
 class FaultPlan:
     """Which request fails, and how.
 
-    Decided per (idempotency key, request number), so a retry is a different
-    draw and can succeed, and a given key fails the same way on every run.
+    Requests are counted per idempotency key (one approval's attempts), so a retry
+    is a different draw and can succeed. A seeded plan draws from the request itself
+    (operation and parameters) and that count: the same action meets the same faults
+    on every run, whatever approval and so whatever idempotency key it came from, and
+    a replay starts again at its own first attempt even in the same process. A
+    scripted plan (tests) keys on the idempotency key.
     The request counter lives here rather than in the database because it
     describes the network between caller and control plane, not the ledger.
     """
 
     decide: Callable[[str, int], Fault | None] = lambda _key, _n: None
+    by_request: bool = False
     _seen: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def next(self, key: str) -> Fault | None:
+    def next(self, idempotency_key: str, request: str) -> Fault | None:
         with self._lock:
-            self._seen[key] += 1
-            n = self._seen[key]
-        return self.decide(key, n)
+            self._seen[idempotency_key] += 1
+            n = self._seen[idempotency_key]
+        return self.decide(request if self.by_request else idempotency_key, n)
 
     @classmethod
     def seeded(cls, rate: float, seed: int) -> FaultPlan:
@@ -79,7 +84,7 @@ class FaultPlan:
             # that double-applies without idempotency.
             return Fault.LOST_RESPONSE if _roll(f"{seed}:{key}:{n}#mode") < 0.5 \
                 else Fault.UNAVAILABLE
-        return cls(decide=decide)
+        return cls(decide=decide, by_request=True)
 
     @classmethod
     def scripted(cls, faults: dict[str, list[Fault | None]]) -> FaultPlan:
@@ -115,11 +120,11 @@ class ControlPlane:
         if operation not in OPERATIONS:
             return Reply(422, {"error": f"unknown operation {operation!r}"})
 
-        fault = self.faults.next(idempotency_key)
+        digest = request_hash(operation, params)
+        fault = self.faults.next(idempotency_key, digest)
         if fault is Fault.UNAVAILABLE:
             return Reply(503, {"error": "control plane unavailable"})
 
-        digest = request_hash(operation, params)
         stored = self._stored(idempotency_key)
         if stored is not None:
             return self._replay(stored, digest)

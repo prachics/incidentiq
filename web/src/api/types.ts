@@ -107,6 +107,8 @@ export interface ApprovalDetail extends ApprovalSummary {
   reasoning: string;
   evidence: { documents?: RetrievedDoc[]; tool_calls?: ToolCall[] };
   arguments_schema: JsonSchema | null;
+  /** Why the proposed arguments could not execute as they stand; empty if they can. */
+  argument_problems?: string[];
 }
 
 export interface ToolCall {

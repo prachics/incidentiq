@@ -7,21 +7,23 @@
     were archived because the archive command had been failing silently for nine days, and nothing alerted
     on archive failure.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -38,21 +40,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in payment-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -69,21 +73,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
     dead tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -101,22 +107,24 @@
     backoff turned each rate-limited request into four, so the limit was breached further the harder the
     system tried to recover.
   root_cause_keywords:
-  - exceeded
-  - during
-  - traffic
-  - backoff
-  - turned
+  - batch
   - breached
-  - further
-  - harder
-  - system
-  - recover
-  - running
-  - schedule
-  - rate-limit
+  - consuming
+  - customer
   - external
+  - harder
+  - hours
+  - limited
+  - party
+  - provider
+  - quota
+  - rate-limit
+  - recover
   - retry
-  - backoff
+  - schedule
+  - system
+  - tried
+  - turned
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -133,21 +141,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in catalog-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -164,22 +174,26 @@
   expected_root_cause: An environment variable was set in the deployment manifest but absent from the
     canary overlay, so canary pods fell back to a default that pointed at the wrong endpoint.
   root_cause_keywords:
-  - config
-  - change
-  - applied
-  - replicas
-  - routed
-  - replica
-  - failed
+  - absent
   - apparent
-  - randomness
+  - applied
   - balancing
-  - environment
-  - variable
+  - canary
   - config
+  - configuration
+  - default
+  - deployment
   - drift
-  - deploy
-  - consistency
+  - endpoint
+  - environment
+  - environments
+  - manifest
+  - overlay
+  - pointed
+  - randomness
+  - routed
+  - variable
+  - wrong
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -200,22 +214,19 @@
     no in-sync replica to take over, because min.insync.replicas had been lowered during an earlier incident
     and never restored. Those partitions became unavailable for writes.
   root_cause_keywords:
+  - alive
   - broker
-  - cluster
-  - offline
-  - partitions
-  - replica
-  - lowered
-  - during
-  - earlier
+  - caused
   - incident
+  - insync
+  - leadership
+  - lowered
+  - nominally
+  - offline
+  - partition
   - restored
-  - became
   - unavailable
-  - kafka
-  - queue
-  - replication
-  - broker
+  - writes
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -234,21 +245,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in inventory-db, so
     dead tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -266,22 +279,19 @@
     no in-sync replica to take over, because min.insync.replicas had been lowered during an earlier incident
     and never restored. Those partitions became unavailable for writes.
   root_cause_keywords:
+  - alive
   - broker
-  - cluster
-  - offline
-  - partitions
-  - replica
-  - lowered
-  - during
-  - earlier
+  - caused
   - incident
+  - insync
+  - leadership
+  - lowered
+  - nominally
+  - offline
+  - partition
   - restored
-  - became
   - unavailable
-  - kafka
-  - queue
-  - replication
-  - broker
+  - writes
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -300,21 +310,24 @@
   expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - certificate
-  - expired
   - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
+  - balancer
   - certificate
-  - expiry
+  - chain
+  - disabled
+  - eight
+  - enabled
+  - intermediate
+  - migration
+  - monitor
+  - monitoring
+  - months
   - network
+  - renewal
+  - tls
+  - trust
+  - valid
+  - watching
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -332,21 +345,23 @@
     saw. Memory grew linearly with request volume until the container hit its limit and was OOM-killed,
     at which point the cycle restarted.
   root_cause_keywords:
-  - unbounded
-  - retained
-  - response
-  - memory
-  - linearly
-  - volume
   - container
-  - restarted
-  - listener
-  - registered
-  - unregistered
-  - permanently
-  - memory
-  - restart
+  - cycle
+  - killed
+  - kills
+  - leading
   - leak
+  - linearly
+  - listener
+  - oom
+  - point
+  - process
+  - reachable
+  - registered
+  - restarted
+  - retained
+  - unbounded
+  - unregistered
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -365,21 +380,23 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -397,21 +414,23 @@
     primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
     traffic load-balanced across replicas therefore returned data up to four minutes old.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -429,21 +448,23 @@
     than they were archived because the archive command had been failing silently for nine days, and nothing
     alerted on archive failure.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -461,22 +482,20 @@
     hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
     to the memory allocation.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -493,21 +512,23 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
-  - unbounded
-  - retained
-  - response
-  - memory
-  - linearly
-  - volume
   - container
-  - restarted
-  - listener
-  - registered
-  - unregistered
-  - permanently
-  - memory
-  - restart
+  - cycle
+  - killed
+  - kills
+  - leading
   - leak
+  - linearly
+  - listener
+  - oom
+  - point
+  - process
+  - reachable
+  - registered
+  - restarted
+  - retained
+  - unbounded
+  - unregistered
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -526,22 +547,19 @@
   expected_root_cause: Disk pressure on one kafka-events broker caused it to drop out of the ISR for its
     partitions, and leadership could not move while it was still nominally alive.
   root_cause_keywords:
+  - alive
   - broker
-  - cluster
-  - offline
-  - partitions
-  - replica
-  - lowered
-  - during
-  - earlier
+  - caused
   - incident
+  - insync
+  - leadership
+  - lowered
+  - nominally
+  - offline
+  - partition
   - restored
-  - became
   - unavailable
-  - kafka
-  - queue
-  - replication
-  - broker
+  - writes
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -561,21 +579,23 @@
     the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
     traffic load-balanced across replicas therefore returned data up to four minutes old.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -593,22 +613,20 @@
     hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
     to the memory allocation.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -625,22 +643,20 @@
   expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
     memory, forcing eviction of the entries that actually mattered.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -657,21 +673,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in user-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -689,22 +707,24 @@
     backoff turned each rate-limited request into four, so the limit was breached further the harder the
     system tried to recover.
   root_cause_keywords:
-  - exceeded
-  - during
-  - traffic
-  - backoff
-  - turned
+  - batch
   - breached
-  - further
-  - harder
-  - system
-  - recover
-  - running
-  - schedule
-  - rate-limit
+  - consuming
+  - customer
   - external
+  - harder
+  - hours
+  - limited
+  - party
+  - provider
+  - quota
+  - rate-limit
+  - recover
   - retry
-  - backoff
+  - schedule
+  - system
+  - tried
+  - turned
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -721,22 +741,24 @@
   expected_root_cause: A batch job began running during peak hours after a schedule change, consuming
     the same rate-limit quota as live customer traffic.
   root_cause_keywords:
-  - exceeded
-  - during
-  - traffic
-  - backoff
-  - turned
+  - batch
   - breached
-  - further
-  - harder
-  - system
-  - recover
-  - running
-  - schedule
-  - rate-limit
+  - consuming
+  - customer
   - external
+  - harder
+  - hours
+  - limited
+  - party
+  - provider
+  - quota
+  - rate-limit
+  - recover
   - retry
-  - backoff
+  - schedule
+  - system
+  - tried
+  - turned
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -753,21 +775,24 @@
   expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - certificate
-  - expired
   - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
+  - balancer
   - certificate
-  - expiry
+  - chain
+  - disabled
+  - eight
+  - enabled
+  - intermediate
+  - migration
+  - monitor
+  - monitoring
+  - months
   - network
+  - renewal
+  - tls
+  - trust
+  - valid
+  - watching
   expected_tools:
   - get_service_dependencies
   - get_service_logs
@@ -784,21 +809,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in user-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_dependencies
   - get_service_logs

@@ -30,6 +30,7 @@ import hashlib
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, ClassVar
@@ -105,10 +106,18 @@ class Tool(ABC):
     description: ClassVar[str]
     args_model: ClassVar[type[BaseModel]]
     requires_approval: ClassVar[bool] = False
+    # Searches with an embedding model, which the caller passes to run().
+    uses_embeddings: ClassVar[bool] = False
 
     @abstractmethod
     def run(self, conn: psycopg.Connection, args: BaseModel) -> dict[str, Any]:
         """Execute. Raise ToolError on failure. Return a JSON-serialisable dict."""
+
+    def check(self, conn: psycopg.Connection, args: BaseModel) -> None:
+        """Raise ToolError if these arguments could not be carried out. Reads only:
+        it is asked before approval, when nothing may change. Tools whose argument
+        schema says it all keep this default; write tools check against the data."""
+        return None
 
     @classmethod
     def schema(cls) -> dict[str, Any]:
@@ -130,6 +139,16 @@ class Tool(ABC):
                 f"invalid arguments for {self.name}: {exc.errors()}",
                 status=ToolStatus.MALFORMED,
             ) from exc
+
+
+def argument_problems(conn: psycopg.Connection, tool: Tool, arguments: dict[str, Any]) -> list[str]:
+    """What would stop these arguments executing (schema validation, then the
+    tool's own checks), found before anyone approves them. Nothing is run."""
+    try:
+        tool.check(conn, tool.validate_args(arguments))
+    except ToolError as exc:
+        return [str(exc)]
+    return []
 
 
 class FailureInjector:
@@ -208,14 +227,16 @@ def execute_tool(
     investigation_id: str,
     attempt: int = 1,
     injector: FailureInjector | None = None,
+    embeddings: Callable[[], Any] | None = None,
 ) -> ToolResult:
     """Run one tool once, with failure injection and timing. No retries here -
     retry policy belongs to the caller, which is what makes it testable.
-    Each attempt is its own span, so retries are visible in the trace."""
+    Each attempt is its own span, so retries are visible in the trace.
+    `embeddings` gives a tool that searches (`uses_embeddings`) the caller's model."""
     with span(f"tool {tool.name}", **{"incidentiq.tool": tool.name,
                                       "incidentiq.tool.attempt": attempt}) as current:
         result = _execute_tool(conn, tool, raw_args, investigation_id=investigation_id,
-                               attempt=attempt, injector=injector)
+                               attempt=attempt, injector=injector, embeddings=embeddings)
         current.set_attribute("incidentiq.tool.status", result.status.value)
         current.set_attribute("incidentiq.tool.injected_failure", result.injected_failure)
         if not result.ok:
@@ -232,6 +253,7 @@ def _execute_tool(
     investigation_id: str,
     attempt: int,
     injector: FailureInjector | None,
+    embeddings: Callable[[], Any] | None = None,
 ) -> ToolResult:
     injector = injector or FailureInjector()
     started = time.perf_counter()
@@ -255,7 +277,10 @@ def _execute_tool(
 
     try:
         args = tool.validate_args(raw_args)
-        data = tool.run(conn, args)
+        if tool.uses_embeddings:
+            data = tool.run(conn, args, embeddings=embeddings() if embeddings else None)
+        else:
+            data = tool.run(conn, args)
     except ToolError as exc:
         return ToolResult(
             tool_name=tool.name, status=exc.status, arguments=raw_args,

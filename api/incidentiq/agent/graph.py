@@ -164,12 +164,19 @@ class InvestigationRunner:
         except Exception:  # noqa: BLE001 - only needed for retrieval
             log.debug("pgvector not registered on the node connection")
 
+        # Approved actions go out through a client built from this runner's settings,
+        # not the environment's: an evaluation replays a run with the settings it recorded.
+        self._own_control_plane = control_plane is None
+        if control_plane is None:
+            from incidentiq.controlplane.client import ControlPlaneClient
+            control_plane = ControlPlaneClient.from_settings(self.conn, self.settings)
         self.ctx = NodeContext(
             conn=self.conn,
             llm=llm or get_llm(self.settings),
             injector=FailureInjector(self.settings),
             tool_max_retries=self.settings.tool_max_retries,
             control_plane=control_plane,
+            settings=self.settings,
         )
         self._cp_conn = psycopg.connect(self.settings.database_url, autocommit=True)
         self.checkpointer = PostgresSaver(self._cp_conn)
@@ -177,6 +184,8 @@ class InvestigationRunner:
         self.graph = build_graph(self.ctx, self.checkpointer)
 
     def close(self) -> None:
+        if self._own_control_plane:
+            self.ctx.control_plane.close()
         self._cp_conn.close()
         if self._own_conn:
             self.conn.close()

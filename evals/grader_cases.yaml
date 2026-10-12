@@ -1,0 +1,51 @@
+# Every distinct root cause the agent stated in the Phase 4 runs (evals/results/phase4),
+# labeled by reading it against its scenario's failure mode: does it state that failure
+# of the right service? Regression cases for the grades those runs report. Not a
+# holdout: two of the grader's phrasings were added after reading some of these.
+- {scenario: SC-AP-001, states_it: true, root_cause: "Database connection pool exhaustion"}
+- {scenario: SC-AP-001, states_it: true, root_cause: "Database connection pool exhausted"}
+- {scenario: SC-AP-001, states_it: true, root_cause: "Database connection pool exhaustion on recommendation-service"}
+- {scenario: SC-AP-002, states_it: true, root_cause: "connection pool exhaustion"}
+- {scenario: SC-AP-002, states_it: true, root_cause: "connection pool exhaustion on recommendation-service"}
+- {scenario: SC-CA-001, states_it: false, root_cause: "downstream dependency timeout cascading upstream on user-db"}
+- scenario: SC-CA-001
+  states_it: true
+  root_cause: >-
+    The root cause of the slowness in the user-service is due to issues with the user-db
+    service. The user-db service is experiencing high disk usage and disk space issues, which
+    are causing errors and impacting performance.
+- {scenario: SC-CA-002, states_it: true, root_cause: "payment-db became slow due to disk space issues, causing timeouts in payment-service"}
+- {scenario: SC-CA-002, states_it: true, root_cause: "payment-db became slow due to disk exhaustion, causing timeouts in payment-service"}
+- scenario: SC-SS-001
+  states_it: true
+  root_cause: >-
+    redis-cart reached its maxmemory limit and the allkeys-lru policy began evicting hot keys
+    due to a new key pattern or oversized key introduced upstream
+- scenario: SC-SS-001
+  states_it: true
+  root_cause: >-
+    redis-cart is experiencing memory pressure and eviction issues due to an oversized key or a
+    new key pattern that has doubled the working set without adjusting the memory allocation.
+- scenario: SC-SS-001
+  states_it: true
+  root_cause: >-
+    The root cause of the incident is memory pressure in the Redis instance used by the
+    redis-cart service. The logs indicate that the Redis instance is approaching its maximum
+    memory limit and is evicting keys due to the 'allkeys-lru' policy. This suggests that the
+    service is experiencing a higher load than usual, possibly due to a new key pattern or an
+    oversized key that is consuming a significant amount of memory.
+- {scenario: SC-SS-002, states_it: false, root_cause: "connection pool exhaustion or regression from a recent deploy, source not yet isolated"}
+- {scenario: SC-TF-001, states_it: true, root_cause: "downstream dependency timeout cascading upstream on user-service"}
+- scenario: SC-TF-001
+  states_it: true
+  root_cause: >-
+    Degradation in user-db propagated upward because user-service had no timeout configured on
+    calls to it, causing request threads to block indefinitely and saturate user-service's pool.
+- {scenario: SC-TF-001, states_it: true, root_cause: "Degradation in user-db causing timeouts and circuit breaker OPEN in user-service"}
+- scenario: SC-TF-002
+  states_it: true
+  root_cause: >-
+    Autovacuum had been unable to keep up on the largest table in fraud-db, leading to an
+    accumulation of dead tuples until the volume was filled.
+- {scenario: SC-TF-002, states_it: true, root_cause: "Disk space exhaustion on the fraud-db service"}
+- {scenario: SC-TF-002, states_it: false, root_cause: "The logs are incomplete and do not provide a specific error signature to identify the root cause of the issue."}

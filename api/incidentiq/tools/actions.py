@@ -50,7 +50,22 @@ class RestartService(Tool):
     args_model = RestartServiceArgs
     requires_approval = True
 
+    def check(self, conn: psycopg.Connection, args: RestartServiceArgs) -> None:
+        self._targets(conn, args)
+
     def run(self, conn: psycopg.Connection, args: RestartServiceArgs) -> dict[str, Any]:
+        targets = self._targets(conn, args)
+        return {
+            "action": "restart_service",
+            "service": args.service,
+            "instances_targeted": targets,
+            "instance_count": len(targets),
+            "rolling": args.instance_id is None,
+            "reason": args.reason,
+            "note": "Validated against the mock infrastructure. No live system is modified.",
+        }
+
+    def _targets(self, conn: psycopg.Connection, args: RestartServiceArgs) -> list[str]:
         row = conn.execute(
             "SELECT replica_count FROM services WHERE name = %s", (args.service,)
         ).fetchone()
@@ -74,16 +89,7 @@ class RestartService(Tool):
                     "SELECT id FROM service_instances WHERE service = %s", (args.service,)
                 ).fetchall()
             ]
-
-        return {
-            "action": "restart_service",
-            "service": args.service,
-            "instances_targeted": targets,
-            "instance_count": len(targets),
-            "rolling": args.instance_id is None,
-            "reason": args.reason,
-            "note": "Validated against the mock infrastructure. No live system is modified.",
-        }
+        return targets
 
 
 class ScaleServiceArgs(BaseModel):
@@ -105,13 +111,11 @@ class ScaleService(Tool):
     args_model = ScaleServiceArgs
     requires_approval = True
 
+    def check(self, conn: psycopg.Connection, args: ScaleServiceArgs) -> None:
+        self._replicas(conn, args)
+
     def run(self, conn: psycopg.Connection, args: ScaleServiceArgs) -> dict[str, Any]:
-        row = conn.execute(
-            "SELECT replica_count FROM services WHERE name = %s", (args.service,)
-        ).fetchone()
-        if not row:
-            raise ToolError(f"unknown service {args.service!r}", status=ToolStatus.MALFORMED)
-        current = row[0]
+        current = self._replicas(conn, args)
         return {
             "action": "scale_service",
             "service": args.service,
@@ -123,6 +127,14 @@ class ScaleService(Tool):
             "reason": args.reason,
             "note": "Validated against the mock infrastructure. No live system is modified.",
         }
+
+    def _replicas(self, conn: psycopg.Connection, args: ScaleServiceArgs) -> int:
+        row = conn.execute(
+            "SELECT replica_count FROM services WHERE name = %s", (args.service,)
+        ).fetchone()
+        if not row:
+            raise ToolError(f"unknown service {args.service!r}", status=ToolStatus.MALFORMED)
+        return row[0]
 
 
 class RollbackDeployArgs(BaseModel):
@@ -165,7 +177,24 @@ class RollbackDeploy(Tool):
     args_model = RollbackDeployArgs
     requires_approval = True
 
+    def check(self, conn: psycopg.Connection, args: RollbackDeployArgs) -> None:
+        self._versions(conn, args)
+
     def run(self, conn: psycopg.Connection, args: RollbackDeployArgs) -> dict[str, Any]:
+        current, target = self._versions(conn, args)
+        return {
+            "action": "rollback_deploy",
+            "service": args.service,
+            "current_version": current[0],
+            "target_version": args.target_version,
+            "target_deployed_at": target[1].isoformat(),
+            "target_deploy_id": target[0],
+            "reason": args.reason,
+            "note": "Validated against the mock infrastructure. No live system is modified.",
+        }
+
+    def _versions(self, conn: psycopg.Connection, args: RollbackDeployArgs) -> tuple[Any, Any]:
+        """The service's current deploy and the one to roll back to."""
         current = conn.execute(
             "SELECT version, deployed_at FROM deploys WHERE service = %s "
             "ORDER BY deployed_at DESC LIMIT 1",
@@ -194,17 +223,7 @@ class RollbackDeploy(Tool):
                 f"Known versions: {', '.join(known)}",
                 status=ToolStatus.MALFORMED,
             )
-
-        return {
-            "action": "rollback_deploy",
-            "service": args.service,
-            "current_version": current[0],
-            "target_version": args.target_version,
-            "target_deployed_at": target[1].isoformat(),
-            "target_deploy_id": target[0],
-            "reason": args.reason,
-            "note": "Validated against the mock infrastructure. No live system is modified.",
-        }
+        return current, target
 
 
 def execute_action(

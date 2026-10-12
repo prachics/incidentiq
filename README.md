@@ -95,58 +95,48 @@ fused with weighted reciprocal rank fusion — over `BAAI/bge-small-en-v1.5`
 embeddings, 320-token chunks with 64-token overlap, service pre-filter applied
 before ranking. Measured across 12 labelled situations.
 
-### Agent (Phase 3)
+### Agent
 
 | Metric | Target | Result |
 |---|---|---|
-| Task completion | ≥ 90% | **50.0%** |
+| Task completion | ≥ 90% | **70.0%** |
 | Abstention accuracy | — | **100%** |
-| Tool execution success | ≥ 95% | 81.2% (32 attempts) |
+| Tool execution success | ≥ 95% | 80.7% (31 attempts) |
 | Recovery after injected tool failure | — | 50% |
-| Median / p95 latency | — | 111.8s / 183.4s |
-| Tokens per investigation | — | 16.0k in / 0.7k out |
+| Median / p95 latency | — | 108.3s / 157.4s |
+| Tokens per investigation | — | 15.9k in / 0.8k out |
 | Groundedness | ≥ 90% | not yet scored |
 
 | Scenario kind | n | Completion |
 |---|---|---|
 | Nothing retrievable (must abstain) | 2 | **100%** |
-| Injected tool failures | 2 | **100%** |
-| Cascading / multi-service | 2 | 50% |
-| Single service | 2 | 0% |
-| Approval-gated action | 2 | 0% |
+| Approval-gated action | 2 | **100%** |
+| Cascading / multi-service | 2 | **100%** |
+| Single service | 2 | 50% |
+| Injected tool failures | 2 | 0% |
 
 **Read these numbers carefully.** They come from a 10-scenario stratified sample
-against a local 14-billion-parameter model at a 3-iteration cap — not the full
-100-scenario suite at full budget. Task completion is therefore a lower bound.
-The comparison against a frontier model is the reason the provider interface
-exists and has not been run yet. Groundedness is unscored because a groundedness
-figure without a calibration kappa beside it is not interpretable, and that
-calibration has not been done.
+against a local 14-billion-parameter model at a 3-iteration cap and a fixed
+sampling seed — not the full 100-scenario suite at full budget. They measure the
+capped agent, which often stops at a diagnosis before proposing an action, and
+one scenario is ten points. Groundedness is
+unscored because a groundedness figure without a calibration kappa beside it is
+not interpretable, and that calibration has not been done.
 
-**Where the failures are is more informative than the score.** Of the five
-failures, two were under-commitment rather than wrong answers: the agent
-identified the correct failure mode and then declined to commit to it. In one
-case it wrote
-*"the recommendation-service is experiencing connection pool exhaustion"* — the
-correct diagnosis — and abstained because it could not tell whether the cause was
-a code defect or a downstream dependency.
-
-That is the direct cost of a deliberate choice. The prompts push hard toward
-abstaining rather than fabricating, which is why every abstention scenario
-passed. The same bias makes the agent under-commit when evidence is present. A
-system tuned the other way would score higher here and would fabricate on the
-fifteen scenarios where fabricating is the worst possible behaviour. The
-tradeoff is now measured rather than assumed.
-
-Two more were hallucinated tool arguments — a version string that had never been
-deployed, and a malformed one — both refused by the tool's own schema validation
-before execution, after a human had already approved the action. The fifth named
-the right service but not the failure mode.
-
-Note the distinction between the two injected-failure figures: both scenarios in
-that category reached a correct conclusion (100% completion), while the recovery
-rate is 50% because only one of them had a tool that failed and then succeeded
-on a retry.
+**The measurement was fixed before the agent was changed.** The harness had been
+approving arguments the approval API refuses, grading against one narrative per
+failure mode word for word (and later, grading advice as if it were the
+diagnosis), planting metric anomalies that hourly averages hid, and letting
+sampling alone move the score ten points. With those fixed, the Phase 3 agent
+scores 70%. Three agent changes, measured one at a time on the same harness and
+regraded together, scored 70%, 80% and 70%, each moving individual scenarios both
+ways. The third costs a scenario on purpose: the agent may no longer propose an
+action on a service whose own logs or metrics, read in this investigation, show
+nothing abnormal (no error lines, no metric moved 30% or more either way), which once
+led it to apply a past incident's fix to a service with nothing wrong. When an
+injected tool failure hides that evidence, it abstains instead. The tables above
+are the agent as it stands, after review fixes, which scored the same scenario for
+scenario as the third.
 
 Full methodology, ablations, and limitations: [`docs/EVALS.md`](docs/EVALS.md).
 

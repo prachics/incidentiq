@@ -28,3 +28,26 @@ def database_missing(reason: str) -> None:
     if os.environ.get("INCIDENTIQ_REQUIRE_DB"):
         pytest.fail(f"required database setup is missing: {reason}")
     pytest.skip(reason)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _own_the_database():
+    """Database tests empty tables an evaluation reads: they and an evaluation never
+    run against the same database at once (evals/fixtures.py EVAL_LOCK)."""
+    import psycopg
+    from incidentiq.config import get_settings
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from evals.fixtures import exclusive
+
+    url = get_settings().database_url
+    try:
+        psycopg.connect(url, connect_timeout=3).close()
+    except psycopg.OperationalError:
+        yield                                # no database: those tests skip or fail on their own
+        return
+    try:
+        with exclusive(url):
+            yield
+    except RuntimeError as exc:
+        pytest.exit(f"{exc}; run the database tests when it has finished", returncode=3)

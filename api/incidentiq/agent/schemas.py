@@ -61,6 +61,10 @@ class ProposeOut(BaseModel):
     abstention_reason: str = ""
 
 
+class ArgumentsFixOut(BaseModel):
+    remediation_arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class SummarizeOut(BaseModel):
     summary: str = ""
     uncertainties: list[str] = Field(default_factory=list)

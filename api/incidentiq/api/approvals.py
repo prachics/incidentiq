@@ -13,13 +13,15 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
+import psycopg
 from fastapi import APIRouter, HTTPException, Query, status
+from psycopg.rows import tuple_row
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from incidentiq.api.auth import Approver, Viewer
 from incidentiq.api.deps import DB, Jobs
 from incidentiq.telemetry import DECISIONS
-from incidentiq.tools import registry
+from incidentiq.tools import argument_problems, registry
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -70,6 +72,10 @@ def get_approval(approval_id: str, conn: DB, _: Viewer) -> dict[str, Any]:
     tool = registry.get(row["proposed_tool"])
     # The schema lets a client render an edit form that the server will accept.
     row["arguments_schema"] = tool.args_model.model_json_schema() if tool else None
+    # What would stop the proposed arguments executing, so the approver sees it
+    # before deciding rather than as a failed action after.
+    row["argument_problems"] = (_problems(conn, tool, row["proposed_arguments"])
+                                if tool and row["decision"] is None else [])
     return row
 
 
@@ -86,7 +92,7 @@ def decide(approval_id: str, body: DecisionIn, conn: DB, who: Approver,
     if row["decision"] is not None:
         raise _already_decided(approval_id, row)
 
-    decision, modified = _resolve(body, row)
+    decision, modified = _resolve(body, row, conn)
     # One transaction: a decision without its audit event would be permanent
     # (a retry gets 409) and unexplained.
     with conn.transaction():
@@ -128,15 +134,34 @@ def decide(approval_id: str, body: DecisionIn, conn: DB, who: Approver,
     }
 
 
-def _resolve(body: DecisionIn, row: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
+def _problems(conn: psycopg.Connection, tool: Any, arguments: dict[str, Any]) -> list[str]:
+    # The tools read rows by position; this connection returns dicts.
+    previous = conn.row_factory
+    conn.row_factory = tuple_row
+    try:
+        return argument_problems(conn, tool, arguments)
+    finally:
+        conn.row_factory = previous
+
+
+def _resolve(body: DecisionIn, row: dict[str, Any],
+             conn: psycopg.Connection) -> tuple[str, dict[str, Any] | None]:
     if body.decision == "reject":
         return "rejected", None
-    if body.arguments is None or body.arguments == row["proposed_arguments"]:
-        return "approved", None
     tool = registry.get(row["proposed_tool"])
     if tool is None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"tool {row['proposed_tool']!r} is no longer registered")
+    if body.arguments is None or body.arguments == row["proposed_arguments"]:
+        problems = _problems(conn, tool, row["proposed_arguments"])
+        if problems:
+            # Approving these would only produce a failed action; edit them instead.
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                {"message": f"the proposed arguments for {tool.name} cannot be executed; "
+                            "approve with edited arguments instead",
+                 "errors": [{"loc": [], "msg": p} for p in problems]})
+        return "approved", None
     try:
         tool.args_model.model_validate(body.arguments)
     except ValidationError as exc:
@@ -145,6 +170,12 @@ def _resolve(body: DecisionIn, row: dict[str, Any]) -> tuple[str, dict[str, Any]
             {"message": f"edited arguments are not valid for {tool.name}",
              "errors": [{"loc": list(e["loc"]), "msg": e["msg"]} for e in exc.errors()]},
         ) from exc
+    problems = _problems(conn, tool, body.arguments)
+    if problems:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            {"message": f"edited arguments for {tool.name} cannot be executed",
+             "errors": [{"loc": [], "msg": p} for p in problems]})
     return "modified", body.arguments
 
 

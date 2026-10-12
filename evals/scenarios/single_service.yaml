@@ -6,22 +6,20 @@
   expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
     memory, forcing eviction of the entries that actually mattered.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -37,22 +35,22 @@
     on CPU with a five-minute stabilisation window, so it reacted far too slowly for a spike that arrived
     in under a minute.
   root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
+  - arrived
   - autoscaling
-  - configured
-  - stabilisation
-  - window
+  - beyond
+  - campaign
+  - launched
+  - minute
+  - notice
+  - planning
+  - provisioned
   - reacted
   - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
+  - spike
+  - stabilisation
+  - surge
+  - typical
+  - window
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -69,21 +67,23 @@
   expected_root_cause: A cache flush during deploy left search-service empty. Every in-flight request
     missed and recomputed at once rather than the first one populating the entry for the rest.
   root_cause_keywords:
-  - entries
-  - written
-  - expired
-  - simultaneously
-  - missed
-  - recomputed
-  - concurrently
-  - hammering
   - backing
-  - thundering
-  - expiry
   - boundary
-  - cache
+  - concurrently
+  - empty
+  - entry
+  - flight
+  - flush
+  - hammering
+  - missed
+  - populating
+  - recomputed
   - stampede
+  - store
+  - thundering
   - thundering-herd
+  - ttl
+  - written
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -99,22 +99,22 @@
     in the previous release failed to close its connection on the error branch, so each failed request
     permanently leaked one connection from the pool.
   root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
   - assumed
-  - normal
-  - concurrency
+  - branch
   - checked
-  - queued
-  - database
+  - close
+  - concurrency
+  - connection
   - connection-pool
-  - timeout
-  - saturation
+  - connections
+  - error
+  - exhausted
+  - leaked
+  - longer
+  - normal
+  - previous
+  - queued
+  - timed
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -132,21 +132,24 @@
     disabled during a migration eight months earlier and was never re-enabled, and the expiry monitor
     was watching the load balancer's certificate rather than this one.
   root_cause_keywords:
-  - certificate
-  - expired
   - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
+  - balancer
   - certificate
-  - expiry
+  - chain
+  - disabled
+  - eight
+  - enabled
+  - intermediate
+  - migration
+  - monitor
+  - monitoring
+  - months
   - network
+  - renewal
+  - tls
+  - trust
+  - valid
+  - watching
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -161,21 +164,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in feature-store, so
     dead tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -191,21 +196,23 @@
     primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
     traffic load-balanced across replicas therefore returned data up to four minutes old.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -221,22 +228,26 @@
     \ the cluster and disk-based allocation rules prevented reassignment \u2014 the remaining nodes had\
     \ crossed the high watermark. Queries silently returned partial results rather than failing."
   root_cause_keywords:
-  - primary
+  - copies
+  - crossed
+  - elasticsearch
+  - holding
+  - multiple
+  - nodes
+  - prevented
+  - proceeded
+  - queries
+  - reassignment
+  - recovery
+  - remaining
+  - results
+  - rolling
+  - rules
+  - search
+  - shard
   - shards
   - unassigned
-  - cluster
-  - allocation
-  - prevented
-  - reassignment
-  - remaining
-  - crossed
   - watermark
-  - queries
-  - silently
-  - search
-  - elasticsearch
-  - shards
-  - capacity
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -251,21 +262,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in inventory-db, so
     dead tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -280,21 +293,23 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -309,22 +324,20 @@
   expected_root_cause: A single oversized key on redis-cart consumed a disproportionate share of the node's
     memory, forcing eviction of the entries that actually mattered.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -340,22 +353,28 @@
     calls to it. Request threads blocked indefinitely waiting on feature-store, saturating ml-scoring-service's
     pool and making ml-scoring-service appear to be the failure when it was the victim.
   root_cause_keywords:
-  - became
-  - timeout
-  - configured
-  - threads
-  - blocked
-  - indefinitely
-  - waiting
-  - saturating
-  - making
+  - already
   - appear
-  - failure
-  - victim
+  - breaker
+  - calls
   - cascade
-  - timeout
-  - dependency
+  - cascading
+  - circuit
   - circuit-breaker
+  - degradation
+  - dependency
+  - downstream
+  - indefinitely
+  - making
+  - outage
+  - propagated
+  - retried
+  - saturating
+  - struggling
+  - tripling
+  - turning
+  - upward
+  - victim
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -371,22 +390,22 @@
     in the previous release failed to close its connection on the error branch, so each failed request
     permanently leaked one connection from the pool.
   root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
   - assumed
-  - normal
-  - concurrency
+  - branch
   - checked
-  - queued
-  - database
+  - close
+  - concurrency
+  - connection
   - connection-pool
-  - timeout
-  - saturation
+  - connections
+  - error
+  - exhausted
+  - leaked
+  - longer
+  - normal
+  - previous
+  - queued
+  - timed
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -404,21 +423,23 @@
     \ Every request that missed then recomputed the same value concurrently, hammering the backing store\
     \ \u2014 a thundering herd on each expiry boundary."
   root_cause_keywords:
-  - entries
-  - written
-  - expired
-  - simultaneously
-  - missed
-  - recomputed
-  - concurrently
-  - hammering
   - backing
-  - thundering
-  - expiry
   - boundary
-  - cache
+  - concurrently
+  - empty
+  - entry
+  - flight
+  - flush
+  - hammering
+  - missed
+  - populating
+  - recomputed
   - stampede
+  - store
+  - thundering
   - thundering-herd
+  - ttl
+  - written
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -433,21 +454,23 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
-  - unbounded
-  - retained
-  - response
-  - memory
-  - linearly
-  - volume
   - container
-  - restarted
-  - listener
-  - registered
-  - unregistered
-  - permanently
-  - memory
-  - restart
+  - cycle
+  - killed
+  - kills
+  - leading
   - leak
+  - linearly
+  - listener
+  - oom
+  - point
+  - process
+  - reachable
+  - registered
+  - restarted
+  - retained
+  - unbounded
+  - unregistered
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -465,21 +488,23 @@
     they were archived because the archive command had been failing silently for nine days, and nothing
     alerted on archive failure.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -495,22 +520,27 @@
     to an object without a compatibility shim. Callers still on the old contract failed to deserialise
     it, producing 500s for exactly the fraction of traffic on old clients.
   root_cause_keywords:
-  - release
-  - changed
-  - response
-  - string
-  - object
-  - without
-  - compatibility
   - callers
+  - changed
+  - clients
+  - compatibility
   - contract
-  - failed
+  - dereference
   - deserialise
+  - exactly
+  - exception
+  - field
+  - fraction
+  - happened
+  - include
+  - optional
+  - populated
   - producing
-  - deploy
+  - rarely
   - regression
   - rollback
-  - release
+  - string
+  - unguarded
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -527,21 +557,24 @@
   expected_root_cause: An intermediate CA certificate in sms-adapter's trust chain expired. The leaf certificate
     was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - certificate
-  - expired
   - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
+  - balancer
   - certificate
-  - expiry
+  - chain
+  - disabled
+  - eight
+  - enabled
+  - intermediate
+  - migration
+  - monitor
+  - monitoring
+  - months
   - network
+  - renewal
+  - tls
+  - trust
+  - valid
+  - watching
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -556,21 +589,23 @@
   expected_root_cause: A cache flush during deploy left warehouse-sync empty. Every in-flight request
     missed and recomputed at once rather than the first one populating the entry for the rest.
   root_cause_keywords:
-  - entries
-  - written
-  - expired
-  - simultaneously
-  - missed
-  - recomputed
-  - concurrently
-  - hammering
   - backing
-  - thundering
-  - expiry
   - boundary
-  - cache
+  - concurrently
+  - empty
+  - entry
+  - flight
+  - flush
+  - hammering
+  - missed
+  - populating
+  - recomputed
   - stampede
+  - store
+  - thundering
   - thundering-herd
+  - ttl
+  - written
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -585,22 +620,22 @@
   expected_root_cause: A campaign launched without capacity planning notice. user-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
+  - arrived
   - autoscaling
-  - configured
-  - stabilisation
-  - window
+  - beyond
+  - campaign
+  - launched
+  - minute
+  - notice
+  - planning
+  - provisioned
   - reacted
   - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
+  - spike
+  - stabilisation
+  - surge
+  - typical
+  - window
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -618,21 +653,23 @@
     primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
     traffic load-balanced across replicas therefore returned data up to four minutes old.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -647,21 +684,24 @@
   expected_root_cause: An intermediate CA certificate in warehouse-sync's trust chain expired. The leaf
     certificate was still valid, which is why expiry monitoring did not fire.
   root_cause_keywords:
-  - certificate
-  - expired
   - automated
-  - renewal
-  - disabled
-  - during
-  - migration
-  - months
-  - earlier
-  - expiry
-  - monitor
-  - watching
+  - balancer
   - certificate
-  - expiry
+  - chain
+  - disabled
+  - eight
+  - enabled
+  - intermediate
+  - migration
+  - monitor
+  - monitoring
+  - months
   - network
+  - renewal
+  - tls
+  - trust
+  - valid
+  - watching
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -677,22 +717,28 @@
     to it. Request threads blocked indefinitely waiting on inventory-db, saturating inventory-service's
     pool and making inventory-service appear to be the failure when it was the victim.
   root_cause_keywords:
-  - became
-  - timeout
-  - configured
-  - threads
-  - blocked
-  - indefinitely
-  - waiting
-  - saturating
-  - making
+  - already
   - appear
-  - failure
-  - victim
+  - breaker
+  - calls
   - cascade
-  - timeout
-  - dependency
+  - cascading
+  - circuit
   - circuit-breaker
+  - degradation
+  - dependency
+  - downstream
+  - indefinitely
+  - making
+  - outage
+  - propagated
+  - retried
+  - saturating
+  - struggling
+  - tripling
+  - turning
+  - upward
+  - victim
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -708,21 +754,23 @@
     the primary's write throughput, and the replicas could not apply WAL as fast as it was produced. Read
     traffic load-balanced across replicas therefore returned data up to four minutes old.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -738,22 +786,26 @@
     the third. Requests routed to the stale replica used the old value and failed. The apparent randomness
     was just load balancing.
   root_cause_keywords:
-  - config
-  - change
-  - applied
-  - replicas
-  - routed
-  - replica
-  - failed
+  - absent
   - apparent
-  - randomness
+  - applied
   - balancing
-  - environment
-  - variable
+  - canary
   - config
+  - configuration
+  - default
+  - deployment
   - drift
-  - deploy
-  - consistency
+  - endpoint
+  - environment
+  - environments
+  - manifest
+  - overlay
+  - pointed
+  - randomness
+  - routed
+  - variable
+  - wrong
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -771,22 +823,20 @@
     hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
     to the memory allocation.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -802,22 +852,20 @@
     hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
     to the memory allocation.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -832,21 +880,23 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -862,22 +912,20 @@
     hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
     to the memory allocation.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -892,22 +940,19 @@
   expected_root_cause: Disk pressure on one kafka-events broker caused it to drop out of the ISR for its
     partitions, and leadership could not move while it was still nominally alive.
   root_cause_keywords:
+  - alive
   - broker
-  - cluster
-  - offline
-  - partitions
-  - replica
-  - lowered
-  - during
-  - earlier
+  - caused
   - incident
+  - insync
+  - leadership
+  - lowered
+  - nominally
+  - offline
+  - partition
   - restored
-  - became
   - unavailable
-  - kafka
-  - queue
-  - replication
-  - broker
+  - writes
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -925,22 +970,19 @@
     no in-sync replica to take over, because min.insync.replicas had been lowered during an earlier incident
     and never restored. Those partitions became unavailable for writes.
   root_cause_keywords:
+  - alive
   - broker
-  - cluster
-  - offline
-  - partitions
-  - replica
-  - lowered
-  - during
-  - earlier
+  - caused
   - incident
+  - insync
+  - leadership
+  - lowered
+  - nominally
+  - offline
+  - partition
   - restored
-  - became
   - unavailable
-  - kafka
-  - queue
-  - replication
-  - broker
+  - writes
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -957,21 +999,23 @@
   expected_root_cause: A listener registered per request was never unregistered, so each request added
     a permanently reachable object. Heap grew until the container limit was reached.
   root_cause_keywords:
-  - unbounded
-  - retained
-  - response
-  - memory
-  - linearly
-  - volume
   - container
-  - restarted
-  - listener
-  - registered
-  - unregistered
-  - permanently
-  - memory
-  - restart
+  - cycle
+  - killed
+  - kills
+  - leading
   - leak
+  - linearly
+  - listener
+  - oom
+  - point
+  - process
+  - reachable
+  - registered
+  - restarted
+  - retained
+  - unbounded
+  - unregistered
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -988,22 +1032,22 @@
   expected_root_cause: A campaign launched without capacity planning notice. catalog-service was provisioned
     for typical peak, not six times it.
   root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
+  - arrived
   - autoscaling
-  - configured
-  - stabilisation
-  - window
+  - beyond
+  - campaign
+  - launched
+  - minute
+  - notice
+  - planning
+  - provisioned
   - reacted
   - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
+  - spike
+  - stabilisation
+  - surge
+  - typical
+  - window
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -1020,21 +1064,23 @@
   expected_root_cause: Autovacuum had been unable to keep up on the largest table in payment-db, so dead
     tuples accumulated until the volume filled.
   root_cause_keywords:
-  - volume
-  - reached
-  - segments
   - accumulated
-  - faster
-  - archived
-  - archive
-  - command
-  - failing
-  - silently
-  - nothing
   - alerted
-  - database
+  - archive
+  - archived
+  - autovacuum
+  - command
+  - datastore
   - disk
-  - capacity
+  - exhaustion
+  - filled
+  - largest
+  - nothing
+  - segments
+  - table
+  - tuples
+  - unable
+  - wal
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -1049,21 +1095,23 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -1078,21 +1126,23 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -1108,22 +1158,28 @@
     Request threads blocked indefinitely waiting on user-db, saturating user-service's pool and making
     user-service appear to be the failure when it was the victim.
   root_cause_keywords:
-  - became
-  - timeout
-  - configured
-  - threads
-  - blocked
-  - indefinitely
-  - waiting
-  - saturating
-  - making
+  - already
   - appear
-  - failure
-  - victim
+  - breaker
+  - calls
   - cascade
-  - timeout
-  - dependency
+  - cascading
+  - circuit
   - circuit-breaker
+  - degradation
+  - dependency
+  - downstream
+  - indefinitely
+  - making
+  - outage
+  - propagated
+  - retried
+  - saturating
+  - struggling
+  - tripling
+  - turning
+  - upward
+  - victim
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -1138,22 +1194,27 @@
   expected_root_cause: Release v3.12.0 introduced an unguarded null dereference on a rarely-populated
     optional field. Requests that happened to include it hit the exception path.
   root_cause_keywords:
-  - release
-  - changed
-  - response
-  - string
-  - object
-  - without
-  - compatibility
   - callers
+  - changed
+  - clients
+  - compatibility
   - contract
-  - failed
+  - dereference
   - deserialise
+  - exactly
+  - exception
+  - field
+  - fraction
+  - happened
+  - include
+  - optional
+  - populated
   - producing
-  - deploy
+  - rarely
   - regression
   - rollback
-  - release
+  - string
+  - unguarded
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -1171,22 +1232,20 @@
     hot keys. A new key pattern introduced upstream roughly doubled the working set without any change
     to the memory allocation.
   root_cause_keywords:
-  - reached
-  - maxmemory
-  - policy
-  - evicting
-  - pattern
-  - introduced
-  - upstream
-  - roughly
+  - actually
+  - allkeys
+  - disproportionate
   - doubled
-  - working
-  - without
-  - change
-  - cache
+  - evicting
+  - forcing
+  - mattered
+  - maxmemory
+  - oversized
+  - pattern
+  - policy
   - redis
-  - eviction
-  - memory
+  - share
+  - working
   expected_tools:
   - get_service_logs
   - get_metrics
@@ -1201,21 +1260,23 @@
   expected_root_cause: A long-running analytical query on the replica blocked WAL replay, so the replica
     fell progressively further behind while continuing to serve reads.
   root_cause_keywords:
-  - replication
-  - reached
-  - seconds
-  - backfill
-  - saturated
-  - throughput
-  - replicas
-  - produced
-  - traffic
   - across
+  - analytical
+  - apply
+  - backfill
+  - balanced
+  - continuing
+  - minutes
+  - produced
+  - progressively
+  - reads
+  - replay
+  - saturated
+  - seconds
+  - serve
+  - serving
   - therefore
-  - returned
-  - database
-  - replication
-  - consistency
+  - write
   expected_tools:
   - get_service_logs
   - get_metrics

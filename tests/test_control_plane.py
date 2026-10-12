@@ -25,6 +25,7 @@ from incidentiq.controlplane import (  # noqa: E402
     FaultPlan,
     in_process_http,
 )
+from incidentiq.controlplane.service import request_hash  # noqa: E402
 from incidentiq.tools import ToolError, registry  # noqa: E402
 from incidentiq.tools.actions import execute_action  # noqa: E402
 
@@ -213,9 +214,48 @@ def test_a_modified_decision_executes_the_approvers_arguments(conn):
 def test_seeded_faults_are_reproducible():
     a = FaultPlan.seeded(rate=0.5, seed=7)
     b = FaultPlan.seeded(rate=0.5, seed=7)
-    keys = [f"APR-{i}" for i in range(40)]
-    assert [a.next(k) for k in keys] == [b.next(k) for k in keys]
-    assert any(a.next(k) for k in keys), "a 50% rate injected nothing in 40 draws"
+    requests = [f"request-{i}" for i in range(40)]
+    assert [a.next("APR-1", r) for r in requests] == [b.next("APR-1", r) for r in requests]
+    assert any(a.next("APR-1", r) for r in requests), "a 50% rate injected nothing in 40 draws"
+
+
+def test_the_same_action_meets_the_same_faults_whatever_approval_it_came_from(conn):
+    """A replay's approvals get new ids (a new run id is part of them); the faults it
+    meets must not change with them. Two fresh planes, as two runs would have, send the
+    same action under different idempotency keys, through the client with its retries."""
+    params = {"service": "checkout-service", "reason": "clear the stuck pool"}
+    seed = next(s for s in range(100)
+                if FaultPlan.seeded(0.5, s).next("x", request_hash("restart_service", params)))
+
+    def attempts(key: str) -> list[str]:
+        plane = ControlPlane(conn, FaultPlan.seeded(0.5, seed))
+        client = ControlPlaneClient(in_process_http(plane), max_attempts=4, backoff_s=0.0)
+        sent = client.submit("restart_service", params, idempotency_key=key)
+        return [e.split(":", 1)[1] for e in sent.errors]
+
+    first, replay = attempts(f"APR-{uuid.uuid4().hex}"), attempts(f"APR-{uuid.uuid4().hex}")
+    assert first and first == replay
+
+
+def test_a_replay_in_the_same_process_starts_at_its_own_first_attempt(conn):
+    """The HTTP control plane keeps one plan for the process: a second approval for the
+    same action must meet the faults from its first attempt, not continue the first
+    approval's count."""
+    params = {"service": "checkout-service", "reason": "clear the stuck pool"}
+    seed = next(s for s in range(100)
+                if FaultPlan.seeded(0.5, s).next("x", request_hash("restart_service", params)))
+    plane = ControlPlane(conn, FaultPlan.seeded(0.5, seed))          # shared, as in the service
+    client = ControlPlaneClient(in_process_http(plane), max_attempts=4, backoff_s=0.0)
+
+    def attempts(key: str) -> list[str]:
+        try:
+            sent = client.submit("restart_service", params, idempotency_key=key)
+            return [e.split(":", 1)[1] for e in sent.errors]
+        except ControlPlaneError as exc:
+            return [e.split(":", 1)[1] for e in exc.errors] + ["gave up"]
+
+    first, replay = attempts(f"APR-{uuid.uuid4().hex}"), attempts(f"APR-{uuid.uuid4().hex}")
+    assert first and first == replay
 
 
 def test_arguments_other_than_the_approved_ones_are_refused(conn):

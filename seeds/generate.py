@@ -522,6 +522,11 @@ def gen_logs(r: random.Random, live: list[dict]) -> list[tuple]:
     return rows
 
 
+def diurnal(ts: datetime) -> float:
+    """Daily load shape: lowest around 03:00, highest around 15:00."""
+    return 0.75 + 0.5 * abs(((ts.hour - 3) % 24) / 24 - 0.5) * 2
+
+
 def gen_metrics(r: random.Random, live: list[dict]) -> list[tuple]:
     """Time series at 5-minute granularity. Live situations get a real anomaly
     starting at onset, so the metric and the logs tell the same story."""
@@ -549,9 +554,7 @@ def gen_metrics(r: random.Random, live: list[dict]) -> list[tuple]:
             base = BASELINES.get(metric, 1.0)
             for i in range(points):
                 ts = start + timedelta(minutes=i * METRIC_INTERVAL_MIN)
-                # Diurnal shape + noise.
-                hour_factor = 0.75 + 0.5 * abs(((ts.hour - 3) % 24) / 24 - 0.5) * 2
-                value = base * hour_factor * r.uniform(0.9, 1.1)
+                value = base * diurnal(ts) * r.uniform(0.9, 1.1)
                 if arch and metric == arch.metric and onset and ts >= onset:
                     ramp = min(1.0, (ts - onset).total_seconds() / 1800)
                     if metric in ZERO_BASELINE_METRICS:

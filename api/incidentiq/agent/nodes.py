@@ -22,7 +22,9 @@ from typing import Any
 import psycopg
 
 from incidentiq.agent import prompts
+from incidentiq.agent.evidence import faults
 from incidentiq.agent.schemas import (
+    ArgumentsFixOut,
     IntakeOut,
     PlanOut,
     ProposeOut,
@@ -33,7 +35,7 @@ from incidentiq.agent.schemas import (
 from incidentiq.agent.state import InvestigationState
 from incidentiq.llm.base import LLMProvider, LLMResponse, extract_json
 from incidentiq.telemetry import LLM_SECONDS, LLM_TOKENS, span
-from incidentiq.tools import ToolStatus, execute_tool, registry
+from incidentiq.tools import ToolStatus, argument_problems, execute_tool, registry
 from incidentiq.tools.base import FailureInjector
 
 log = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ class NodeContext:
         injector: FailureInjector | None = None,
         tool_max_retries: int = 3,
         control_plane: Any | None = None,
+        settings: Any | None = None,
     ):
         self.conn = conn
         self.llm = llm
@@ -60,6 +63,14 @@ class NodeContext:
         self.tool_max_retries = tool_max_retries
         # Where approved actions are sent. None means built from settings.
         self.control_plane = control_plane
+        # The runner's settings; None means the environment's.
+        self.settings = settings
+
+    def embeddings(self) -> Any:
+        """The embedding model retrieval uses, from the runner's settings (loaded once
+        per process and model)."""
+        from incidentiq.rag.embeddings import get_embedding_provider
+        return get_embedding_provider(self.settings)
 
 
 def _event(node: str, started: float, **extra: Any) -> dict[str, Any]:
@@ -207,7 +218,7 @@ def retrieve(state: InvestigationState, ctx: NodeContext) -> dict[str, Any]:
         hits = hydrate(ctx.conn, search(
             ctx.conn, query,
             filters=Filters(service=services) if services else None,
-            limit=6, mode="hybrid",
+            limit=6, mode="hybrid", provider=ctx.embeddings(),
         ))
     except Exception as exc:  # noqa: BLE001
         log.exception("retrieval failed")
@@ -355,6 +366,7 @@ def execute_tool_node(state: InvestigationState, ctx: NodeContext) -> dict[str, 
         result = execute_tool(
             ctx.conn, tool, planned["arguments"],
             investigation_id=state["incident_id"], attempt=attempt, injector=ctx.injector,
+            embeddings=ctx.embeddings,
         )
         records.append({
             "tool_name": result.tool_name, "arguments": result.arguments,
@@ -508,19 +520,54 @@ Reasoning:
     citations = [c for c in claimed if c in available]
     invented = [c for c in claimed if c not in available]
 
+    arguments = parsed.get("remediation_arguments") or None
+    problems: list[str] = []
+    notes: list[str] = []
+    abstained = bool(parsed.get("abstained"))
+    abstention_reason = parsed.get("abstention_reason") or None
+    def unseen(args: Any) -> str | None:
+        """The action's target, if this investigation has seen nothing abnormal on it."""
+        target = args.get("service") if isinstance(args, dict) else None
+        return None if faults(state.get("tool_calls") or [], str(target or "")) \
+            else str(target or "the target")
+
+    def withhold(target: str) -> None:
+        nonlocal abstained, tool_name, tool, arguments, abstention_reason, problems
+        notes.append(f"propose: withheld {parsed.get('remediation_tool')} on {target}: "
+                     "no current evidence")
+        abstained, tool_name, tool, arguments, problems = True, None, None, None, []
+        abstention_reason = (f"no current evidence of a problem on {target}: its logs and "
+                             "metrics were not examined or showed nothing abnormal, and a "
+                             "similar past incident is not evidence")
+
+    # No action on a service this investigation has seen nothing abnormal on: checked
+    # on the proposal, and again on the arguments a repair settled on, which may name
+    # another service.
+    if tool is not None and not abstained and (target := unseen(arguments)):
+        withhold(target)
+    if tool is not None:
+        explanation = parsed.get("remediation") or parsed.get("root_cause") or ""
+        arguments, problems, notes, resp = _settle_arguments(
+            ctx, state, tool, dict(arguments or {}), explanation, resp)
+        if target := unseen(arguments):
+            withhold(target)
+
     proposal = {
         "root_cause": parsed.get("root_cause") or "",
         "confidence": round(confidence, 3),
         "evidence_citations": citations,
         "remediation": parsed.get("remediation") or "",
         "remediation_tool": tool_name,
-        "remediation_arguments": parsed.get("remediation_arguments") or None,
+        "remediation_arguments": arguments,
+        # Shown to the approver; a proposal with problems cannot be approved as is.
+        "argument_problems": problems,
         "requires_approval": bool(tool and tool.requires_approval),
-        "abstained": bool(parsed.get("abstained")),
-        "abstention_reason": parsed.get("abstention_reason") or None,
+        "abstained": abstained,
+        "abstention_reason": abstention_reason,
     }
 
-    notes = [f"propose: {'ABSTAINED' if proposal['abstained'] else proposal['root_cause'][:120]}"]
+    headline = "ABSTAINED" if proposal["abstained"] else proposal["root_cause"][:120]
+    notes.insert(0, f"propose: {headline}")
     if invented:
         notes.append(f"propose: dropped {len(invented)} citation(s) to documents that "
                      f"were never retrieved: {', '.join(invented)}")
@@ -602,6 +649,49 @@ def await_approval(state: InvestigationState, ctx: NodeContext) -> dict[str, Any
                        f"{proposal.get('remediation_tool')}"],
         "events": [_event("await_approval", started, ok=True, approval_id=approval_id)],
     }
+
+
+Settled = tuple[dict[str, Any], list[str], list[str], LLMResponse]
+
+
+def _settle_arguments(ctx: NodeContext, state: InvestigationState, tool: Any,
+                      arguments: dict[str, Any], explanation: str, resp: LLMResponse) -> Settled:
+    """Make the proposed arguments executable, or say why they are not: fill a
+    missing `reason` (prose for the approver) from the proposal's own remediation
+    text, run the tool's checks, and give the model one repair with the exact error.
+    The errors name real values ("Known versions: v1.23.4, ..."), which is where a
+    made-up version gets fixed."""
+    notes: list[str] = []
+    fields = getattr(tool.args_model, "model_fields", {})
+    reason_missing = len(str(arguments.get("reason") or "")) < 10
+    if "reason" in fields and reason_missing and len(explanation) >= 10:
+        arguments["reason"] = explanation[:500]
+        notes.append("propose: filled the missing `reason` from the remediation text")
+
+    problems = argument_problems(ctx.conn, tool, arguments)
+    if not problems:
+        return arguments, [], notes, resp
+
+    user = (f"These arguments for {tool.name} cannot be executed:\n{json.dumps(arguments)}\n\n"
+            f"Problem: {problems[0]}\n\nArgument schema:\n"
+            f"{json.dumps(tool.args_model.model_json_schema().get('properties', {}))}\n\n"
+            f"Tool results so far:\n{prompts.render_tool_calls(state.get('tool_calls') or [])}\n\n"
+            "Return corrected arguments that use only values shown above.")
+    fixed, fix_resp = _ask_json(ctx, prompts.FIX_ARGUMENTS, user, max_tokens=400,
+                                model=ArgumentsFixOut)
+    resp = LLMResponse(text=resp.text, input_tokens=resp.input_tokens + fix_resp.input_tokens,
+                       output_tokens=resp.output_tokens + fix_resp.output_tokens,
+                       model=resp.model, stop_reason=resp.stop_reason)
+    candidate = dict((fixed or {}).get("remediation_arguments") or {})
+    if "reason" in fields and len(str(candidate.get("reason") or "")) < 10:
+        candidate["reason"] = arguments.get("reason") or explanation[:500]
+    retried = argument_problems(ctx.conn, tool, candidate) if candidate else problems
+    if not retried:
+        notes.append(f"propose: repaired arguments after: {problems[0][:160]}")
+        return candidate, [], notes, resp
+    notes.append(f"propose: arguments still invalid after one repair: {retried[0][:160]}")
+    # The proposal keeps its own arguments, so it reports their problems, not the repair's.
+    return arguments, problems, notes, resp
 
 
 def approval_id_for(investigation_id: str, run_id: str, iteration: int,

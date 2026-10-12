@@ -27,6 +27,8 @@ export function ApprovalPanel({ approval, role, onDecide }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const fieldErrors = mode === "edit" ? validate(fields, values) : {};
+  // The server refuses to approve arguments that cannot execute; only an edit can.
+  const blocked = (approval.argument_problems?.length ?? 0) > 0;
   const reasonOk = reason.trim().length >= 5;
 
   async function send(body: DecisionRequest) {
@@ -75,6 +77,17 @@ export function ApprovalPanel({ approval, role, onDecide }: Props) {
         </p>
       )}
 
+      {(approval.argument_problems?.length ?? 0) > 0 && (
+        <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+          <p className="font-medium">These arguments cannot execute as proposed:</p>
+          <ul className="mt-1 list-disc pl-4">
+            {approval.argument_problems!.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {role !== "approver" ? (
         <p className="mt-3 text-sm text-slate-600">Only an approver can decide. You are signed in as a viewer.</p>
       ) : (
@@ -106,14 +119,16 @@ export function ApprovalPanel({ approval, role, onDecide }: Props) {
           <div className="mt-4 flex flex-wrap gap-2">
             {mode === "idle" && (
               <>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => send({ decision: "approve" })}
-                  className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-                >
-                  Approve
-                </button>
+                {!blocked && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => send({ decision: "approve" })}
+                    className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+                  >
+                    Approve
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busy || !fields.length}

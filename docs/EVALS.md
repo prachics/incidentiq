@@ -36,7 +36,7 @@ fabricates on these 15 is worse than useless in production.
 
 | Metric | Definition |
 |---|---|
-| **Task completion** | Reached a remediation in the acceptable set, within the iteration cap |
+| **Task completion** | Within the iteration cap: named the service at fault as failing (or acted on it), stated its failure mode in the root cause, and proposed a remediation in the acceptable set where the scenario has one (a diagnosis is enough where it has none). On the 15 no-evidence scenarios, completion is abstaining |
 | **Groundedness** | Share of factual claims traceable to a retrieved chunk, scored by LLM-as-judge |
 | **Tool success rate** | Successful executions ÷ total attempts, **retries counted as attempts** |
 | **Recall@5** | Of the labelled relevant documents, the fraction in the top 5 |
@@ -301,10 +301,11 @@ Four things about this run, stated before the table rather than after it.
 full-budget scenario is 15-20 LLM calls and several minutes; the whole suite is
 an overnight job. Capped runs are reported as capped, and the harness writes the
 cap into the results file so a capped number can never be mistaken for a full
-one. **Task completion under a cap is a lower bound**, and not for a subtle
-reason: with fewer iterations the agent frequently reaches a correct diagnosis
-and stops there without proposing a remediation, which the grader counts as a
-miss. That is the right grading — "did it reach a correct remediation" is the
+one. **Task completion under a cap measures the capped agent**, and the cap
+mostly costs it: with fewer iterations the agent frequently reaches a correct
+diagnosis and stops there without proposing a remediation, which the grader
+counts as a miss. (An uncapped run is expected to score higher, but that is not
+proven until one is run.) That is the right grading — "did it reach a correct remediation" is the
 metric — but it means the gap between capped and uncapped is larger than the
 missing evidence alone would suggest.
 
@@ -493,6 +494,190 @@ argument is refused at the tool layer, failed actions are reported as failures,
 and abstention works. Every one of those was verified by reading a specific
 scenario end to end.
 
+# Phase 4 results — the measurement first, then the agent
+
+Reproduce with:
+
+```bash
+python -m evals.run --sample 2 --max-iterations 3 --no-judge --seed 7
+python -m evals.run --replay evals/results/<run>.json   # rerun only that run's failures
+python -m evals.compare A.json B.json                   # scenario by scenario
+```
+
+## What changed in the harness before any agent change was measured
+
+Phase 3 ended with a list of changes to the agent. Running them showed that the
+harness could not yet tell whether a change helped, for five reasons. Each was
+fixed, with a test, before an agent change was measured.
+
+**Approvals skipped the approval API.** The harness wrote approvals straight into
+the table, so it approved arguments that the API refuses to a human. It now calls
+the decision endpoint's own function, and a refusal is the run's failure.
+
+**Grading matched one narrative literally.** A conclusion was checked against
+keywords from the first narrative of its failure mode: a correct "connection pool
+exhaustion" scored 1 of 16 terms. A vocabulary pooled across narratives fixed that
+and was too loose the other way: a component's name with any failure word ("disk
+I/O has high latency", "a disk hardware failure") passed as a full disk. Each
+failure mode now has phrasings that assert it ("the volume filled", "ran out of
+connections", "replication lag", "shards unassigned"), written from its
+narratives, and a conclusion names it when one matches and no other failure mode
+matches more. Tests hold it to all 32 corpus narratives (each its own failure mode
+and no other) and to answers written apart from the corpus, two per failure mode
+or more, right and nearly right.
+
+**Advice was graded as a diagnosis.** The whole conclusion was graded, and its
+advice ("add a timeout and circuit breaker to prevent future outages") is in the
+words of another failure mode: in SC-CA-002 they outscored a stated root cause of
+disk exhaustion on the right database. The failure mode is now read from the root
+cause the agent states (the service it names is still read from the whole
+conclusion), only from what that asserts has failed, with a denial covering just
+its own part of a sentence: "no disk pressure" names nothing, "the disk is full and
+cpu is normal" still names a full disk.
+
+**A replay inherited the environment.** `--replay` restored the model, cap and seed
+but took failure injection, retries and the control plane's faults from the
+environment, so a changed `FAILURE_INJECTION_SEED` changed which calls failed. A
+run now records those settings and whether it was judged, and a replay restores
+them; a results file without them is not replayed. Runs A to D below predate
+this, so they can be regraded but not replayed; the m4 run records them.
+
+**What the grader is, and is not.** It reads the agent's own conclusions with rules:
+phrasings per failure mode, denials scoped to the part of a sentence they cover, and
+the failure tied to the service it is asserted of (a coordinated part that names no
+service is about the one before it: in "payment-db is slow because payment-service
+has high disk usage and disk space issues", both disk problems are
+payment-service's). It is checked against the 32
+corpus narratives, 37 answers written apart from the corpus, and every distinct root
+cause the agent stated in these runs, labeled by reading them
+(`evals/grader_cases.yaml`, 19 answers, all agree; regression cases rather than a
+holdout, since two phrasings were added after reading some of them). Rules can be
+written around:
+an answer built to fool them could. It is fit for grading this agent's answers, and
+every grade can be read and checked, since each result keeps the text it was given.
+
+**Planted anomalies were averaged away.** Fixtures inserted the anomalous metric
+beside the corpus's normal readings at the same timestamps, so hourly averages
+hid it: a full disk read as falling. Fixtures now scale the corpus's readings and
+record the originals, which cleanup restores.
+
+**Sampling decided the score.** At temperature 0.1 without a seed, a no-evidence
+scenario abstained in one run and answered in the next: ten points on ten
+scenarios from sampling alone. Runs now pass a seed (7) to the model and record
+it; `compare` warns when two runs' seeds differ.
+
+**The test suite and the harness shared a database.** One comparison run was
+thrown away: the database tests, run while it was in progress, emptied the
+tables under it. All four runs below were made with nothing else using the
+database.
+
+Each result also keeps the agent's root cause and proposed action, so a failure
+can be read without rerunning it, `--replay` reruns only a run's failures, and
+`--regrade` grades a run's saved answers again when the grader changes.
+
+**Not measured yet:** the scenarios at their own iteration budgets (4 to 8) and
+the full 100-scenario suite. Every Phase 4 run is capped at 3 iterations on a
+10-scenario sample; at about two minutes a scenario locally, the full suite at
+full budget is a run of several hours, deferred.
+
+## Results — 2026-10-12
+
+`qwen2.5:14b` via Ollama, the same 10 scenarios (stratified, 2 per kind),
+iteration cap 3, seed 7, groundedness not scored. One harness for all four runs;
+each run adds one agent change to the previous one. The four results files, with
+every scenario's conclusion and the text the grader read, are in
+`evals/results/phase4/`. All of them were graded again from their saved answers
+when the grader last changed (`--regrade`, recorded in each file as
+`regraded_with`); against the grader they ran with, that turned SC-CA-002 into a
+pass in C and D.
+
+| Run | Agent (commit) | Completion | Tool success | Median latency |
+|---|---|---|---|---|
+| A | Phase 3 agent, with argument checks before approval (4cd3fd9) | 70% | 83.9% (31) | 109.5s |
+| B | + `get_metrics` overview, every metric against the same hour yesterday (249009e) | 70% | 83.9% (31) | 117.1s |
+| C | + planning examines the dependency the evidence points at (077fe65) | **80%** | 80.7% (31) | 116.1s |
+| D | + no action on a service not seen failing, the evidence gate (94c07d3) | 70% | 80.7% (31) | 115.5s |
+
+All four ran on the harness of 02f990c. They are the record of how the agent
+changed during the milestone; the code has changed since (review fixes to the
+evidence gate, zero baselines, grading and the harness), so none of them is the
+current agent's score. That is the next table.
+
+| Scenario | A | B | C | D |
+|---|---|---|---|---|
+| SC-AP-001 approval_required | ok | ok | ok | ok |
+| SC-AP-002 approval_required | ok | ok | ok | ok |
+| SC-CA-001 cascading | fail | fail | ok | ok |
+| SC-CA-002 cascading | ok | ok | ok | ok |
+| SC-NR-001 no_retrieval | ok | ok | ok | ok |
+| SC-NR-002 no_retrieval | **fabricated** | ok | ok | ok |
+| SC-SS-001 single_service | ok | fail | ok | ok |
+| SC-SS-002 single_service | fail | fail | fail | fail |
+| SC-TF-001 tool_failure | ok | ok | ok | fail |
+| SC-TF-002 tool_failure | ok | ok | fail | fail |
+
+The run before these, on the old harness, scored 60% (`phase4/old-harness.json`);
+it is not comparable with them, since the grader and fixtures changed, and it
+cannot be regraded: it predates saving the agent's root cause.
+
+## The agent as tagged m4
+
+The same 10 scenarios, model, cap and seed, measured at revision 396b391:
+`evals/results/phase4/m4.json`. Changes since are to the harness and its tests
+(cleanup, fault counting, replay refusals) and to how `get_metrics` orders a metric
+with no reading the day before (it no longer ranks first); the agent's planning, gate
+and prompts are as measured. It records the revision, the scenario
+files' hash and every execution setting (failure injection, retries, control plane,
+embedding model), so `--replay` reruns its failures exactly as they ran, and
+`--resume` refuses to continue it with anything changed. An earlier run of the same
+agent before the review fixes (ac566af) scored the same, scenario for scenario.
+
+| | Completion | Tool success | Median / p95 latency | Tokens per investigation |
+|---|---|---|---|---|
+| m4 | **70%** | 80.7% (31) | 108.3s / 157.4s | 15.9k in / 0.8k out |
+
+It passes and fails the same scenarios as run D. The three failures, from the
+results file:
+
+- **SC-SS-002** (single service): proposed `rollback_deploy` to version
+  `"previous"` without listing the service's deploys; the approval API refuses
+  arguments that do not name a real version, so the approval failed. The check
+  did its job; the agent did not look up the version.
+- **SC-TF-001, SC-TF-002** (tool failure): abstained. The injected failure hid
+  the evidence the gate needs before an action may be proposed (below).
+
+## Honest reading
+
+**On ten scenarios: A 70%, B 70%, C 80%, D 70%.** Each change moved individual
+scenarios in both directions. B ended the fabrication (SC-NR-002) and lost
+SC-SS-001. C fixed the cascading scenario it was written for (SC-CA-001: the agent
+now looks at the database the logs point at) and SC-SS-001, and lost a
+tool-failure one (SC-TF-002). At two scenarios per kind, one flip is fifty points
+of a kind, and the seed fixes sampling but not the different path a changed
+prompt takes. C's ten points are one scenario: what this sample can show is
+direction, not a gain.
+
+**The evidence gate costs one scenario here and is kept, on purpose.** In run A
+the agent, asked about a service with nothing to find, retrieved a similar past
+incident and proposed that incident's fix: the worst failure in the suite,
+because it acts on a guess. The gate allows a write action only on a service
+whose own logs or metrics, examined in this investigation, show something abnormal:
+error lines, or a metric moved 30% or more either way. It detects change, not
+failure (a large improvement would also pass it). In
+SC-TF-001 it turned a correct diagnosis into an abstention: the agent named
+`user-db` correctly from `user-service`'s logs, but the injected tool failure kept
+it from reading `user-db`'s own metrics, so the gate had nothing to allow the
+action on. By the gate's rule that is right; by the scenario's expectation it is a
+miss. Runs B and C did not repeat run A's fabrication without the gate, so this
+sample does not show the gate preventing it; the gate makes it impossible by
+construction instead of leaving it to the model. The trade is the same one Phase 3 measured for abstention, made explicit in
+code: fewer actions taken on what was not seen.
+
+**What M4 established is the measurement.** Before it, a correct diagnosis could
+be graded wrong, a planted fault could be invisible, sampling alone moved the
+score ten points, and an approval the API would refuse could pass. Each of those
+would have made the agent changes above look better or worse than they were.
+
 ---
 
 ## Results over time
@@ -503,3 +688,6 @@ Populated from `evals/results/`.
 |---|---|---|---|---|---|---|---|
 | 2026-09-04 | 2 | 0.800 | 0.917 | 0.917 | — | — | — |
 | 2026-09-05 | 3 | — | — | — | 40.0% | not scored | 80.0% |
+| 2026-10-12 | 4 (A, 4cd3fd9: Phase 3 agent, new harness) | — | — | — | 70.0% | not scored | 83.9% |
+| 2026-10-12 | 4 (D, 94c07d3: with the evidence gate) | — | — | — | 70.0% | not scored | 80.7% |
+| 2026-10-12 | 4 (m4, 396b391: the agent as it stands) | — | — | — | 70.0% | not scored | 80.7% |

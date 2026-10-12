@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:14b"
+    # A fixed sampling seed (Ollama only). The eval harness sets one, so two runs
+    # differ because the code did, not because sampling did.
+    llm_seed: int | None = None
 
     # ── Embeddings ──────────────────────────────────────────
     embedding_provider: Literal["local", "openai"] = "local"

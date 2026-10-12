@@ -7,22 +7,22 @@
     the week held connections open far longer than the pool timeout assumed, so under normal concurrency
     every connection was checked out and new requests queued until they timed out.
   root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
   - assumed
-  - normal
-  - concurrency
+  - branch
   - checked
-  - queued
-  - database
+  - close
+  - concurrency
+  - connection
   - connection-pool
-  - timeout
-  - saturation
+  - connections
+  - error
+  - exhausted
+  - leaked
+  - longer
+  - normal
+  - previous
+  - queued
+  - timed
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -41,22 +41,22 @@
     the week held connections open far longer than the pool timeout assumed, so under normal concurrency
     every connection was checked out and new requests queued until they timed out.
   root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
   - assumed
-  - normal
-  - concurrency
+  - branch
   - checked
-  - queued
-  - database
+  - close
+  - concurrency
+  - connection
   - connection-pool
-  - timeout
-  - saturation
+  - connections
+  - error
+  - exhausted
+  - leaked
+  - longer
+  - normal
+  - previous
+  - queued
+  - timed
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -64,8 +64,8 @@
   requires_approval: true
   true_cause_service: recommendation-service
   max_iterations: 8
-  approval_decision: approve
-  notes: restart_service on recommendation-service; human will approve
+  approval_decision: modify
+  notes: restart_service on recommendation-service; human will modify
 - id: SC-AP-003
   kind: approval_required
   query: we're seeing failures on notification-service, no idea if it's us or downstream
@@ -75,22 +75,27 @@
     to an object without a compatibility shim. Callers still on the old contract failed to deserialise
     it, producing 500s for exactly the fraction of traffic on old clients.
   root_cause_keywords:
-  - release
-  - changed
-  - response
-  - string
-  - object
-  - without
-  - compatibility
   - callers
+  - changed
+  - clients
+  - compatibility
   - contract
-  - failed
+  - dereference
   - deserialise
+  - exactly
+  - exception
+  - field
+  - fraction
+  - happened
+  - include
+  - optional
+  - populated
   - producing
-  - deploy
+  - rarely
   - regression
   - rollback
-  - release
+  - string
+  - unguarded
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -109,22 +114,22 @@
     in the week held connections open far longer than the pool timeout assumed, so under normal concurrency
     every connection was checked out and new requests queued until they timed out.
   root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
   - assumed
-  - normal
-  - concurrency
+  - branch
   - checked
-  - queued
-  - database
+  - close
+  - concurrency
+  - connection
   - connection-pool
-  - timeout
-  - saturation
+  - connections
+  - error
+  - exhausted
+  - leaked
+  - longer
+  - normal
+  - previous
+  - queued
+  - timed
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -142,22 +147,27 @@
   expected_root_cause: Release v3.12.0 introduced an unguarded null dereference on a rarely-populated
     optional field. Requests that happened to include it hit the exception path.
   root_cause_keywords:
-  - release
-  - changed
-  - response
-  - string
-  - object
-  - without
-  - compatibility
   - callers
+  - changed
+  - clients
+  - compatibility
   - contract
-  - failed
+  - dereference
   - deserialise
+  - exactly
+  - exception
+  - field
+  - fraction
+  - happened
+  - include
+  - optional
+  - populated
   - producing
-  - deploy
+  - rarely
   - regression
   - rollback
-  - release
+  - string
+  - unguarded
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -165,8 +175,8 @@
   requires_approval: true
   true_cause_service: fraud-service
   max_iterations: 8
-  approval_decision: approve
-  notes: rollback_deploy on fraud-service; human will approve
+  approval_decision: modify
+  notes: rollback_deploy on fraud-service; human will modify
 - id: SC-AP-006
   kind: approval_required
   query: something changed with user-service and I can't work out what
@@ -176,22 +186,22 @@
     on CPU with a five-minute stabilisation window, so it reacted far too slowly for a spike that arrived
     in under a minute.
   root_cause_keywords:
-  - traffic
-  - exceeded
-  - provisioned
-  - capacity
+  - arrived
   - autoscaling
-  - configured
-  - stabilisation
-  - window
+  - beyond
+  - campaign
+  - launched
+  - minute
+  - notice
+  - planning
+  - provisioned
   - reacted
   - slowly
-  - arrived
-  - minute
-  - capacity
-  - autoscaling
-  - traffic
-  - saturation
+  - spike
+  - stabilisation
+  - surge
+  - typical
+  - window
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -210,21 +220,23 @@
     body it saw. Memory grew linearly with request volume until the container hit its limit and was OOM-killed,
     at which point the cycle restarted.
   root_cause_keywords:
-  - unbounded
-  - retained
-  - response
-  - memory
-  - linearly
-  - volume
   - container
-  - restarted
-  - listener
-  - registered
-  - unregistered
-  - permanently
-  - memory
-  - restart
+  - cycle
+  - killed
+  - kills
+  - leading
   - leak
+  - linearly
+  - listener
+  - oom
+  - point
+  - process
+  - reachable
+  - registered
+  - restarted
+  - retained
+  - unbounded
+  - unregistered
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -243,22 +255,22 @@
     in the week held connections open far longer than the pool timeout assumed, so under normal concurrency
     every connection was checked out and new requests queued until they timed out.
   root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
   - assumed
-  - normal
-  - concurrency
+  - branch
   - checked
-  - queued
-  - database
+  - close
+  - concurrency
+  - connection
   - connection-pool
-  - timeout
-  - saturation
+  - connections
+  - error
+  - exhausted
+  - leaked
+  - longer
+  - normal
+  - previous
+  - queued
+  - timed
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -266,8 +278,8 @@
   requires_approval: true
   true_cause_service: catalog-service
   max_iterations: 8
-  approval_decision: approve
-  notes: restart_service on catalog-service; human will approve
+  approval_decision: modify
+  notes: restart_service on catalog-service; human will modify
 - id: SC-AP-009
   kind: approval_required
   query: alert fired on user-service. what's going on?
@@ -277,22 +289,26 @@
     third. Requests routed to the stale replica used the old value and failed. The apparent randomness
     was just load balancing.
   root_cause_keywords:
-  - config
-  - change
-  - applied
-  - replicas
-  - routed
-  - replica
-  - failed
+  - absent
   - apparent
-  - randomness
+  - applied
   - balancing
-  - environment
-  - variable
+  - canary
   - config
+  - configuration
+  - default
+  - deployment
   - drift
-  - deploy
-  - consistency
+  - endpoint
+  - environment
+  - environments
+  - manifest
+  - overlay
+  - pointed
+  - randomness
+  - routed
+  - variable
+  - wrong
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:
@@ -311,22 +327,22 @@
     in the week held connections open far longer than the pool timeout assumed, so under normal concurrency
     every connection was checked out and new requests queued until they timed out.
   root_cause_keywords:
-  - connection
-  - exhausted
-  - introduced
-  - earlier
-  - connections
-  - longer
-  - timeout
   - assumed
-  - normal
-  - concurrency
+  - branch
   - checked
-  - queued
-  - database
+  - close
+  - concurrency
+  - connection
   - connection-pool
-  - timeout
-  - saturation
+  - connections
+  - error
+  - exhausted
+  - leaked
+  - longer
+  - normal
+  - previous
+  - queued
+  - timed
   expected_tools:
   - get_service_logs
   acceptable_remediation_tools:

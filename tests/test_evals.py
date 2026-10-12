@@ -1,9 +1,5 @@
-"""Tests for the evaluation harness itself.
-
-An eval suite that grades incorrectly is worse than no eval suite, because it
-produces numbers people believe. These tests pin the grading rules so a change
-to them is deliberate and visible in a diff.
-"""
+"""The evaluation harness: the grading rules, pinned so that a change to them is
+deliberate and visible in a diff."""
 
 import sys
 from pathlib import Path
@@ -13,9 +9,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "api"))
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "seeds"))
 
 from evals.run import ScenarioResult, _grade, aggregate, failure_analysis  # noqa: E402
 from evals.scenario import Scenario, breakdown, load_scenarios  # noqa: E402
+from evals.words import keyword_hits  # noqa: E402
 
 SCENARIO_DIR = ROOT / "evals" / "scenarios"
 
@@ -275,16 +273,50 @@ class TestArchetypeVariantGrading:
     narrative, which is not.
     """
 
-    def test_either_variant_of_an_archetype_is_accepted(self):
-        sc = next(s for s in load_scenarios(SCENARIO_DIR)
-                  if s.expected_archetype == "disk_full")
-        wal_variant = ("the data volume reached 100%, WAL segments accumulated because "
-                       "the archive command was failing")
-        vacuum_variant = ("autovacuum could not keep up on the largest table so dead "
-                          "tuples accumulated until the volume filled")
-        for text in (wal_variant, vacuum_variant):
-            hits = sum(1 for k in sc.root_cause_keywords if k in text.lower())
-            assert hits >= 2, f"only {hits} hits for a correct diagnosis: {text[:60]}"
+    def test_every_narrative_is_graded_as_its_own_failure_mode_and_no_other(self):
+        """The grader's own accuracy, on the narratives the corpus is built from:
+        with keywords taken from the first narrative only, 4 of 32 failed as
+        their own archetype and 37 of 480 passed as someone else's."""
+        import archetypes as A
+
+        from evals import mechanism
+
+        def render(text):
+            return (text.replace("{dep}", "orders-db").replace("{service}", "checkout-service")
+                        .replace("{version}", "v2.3.1").replace("{team}", "payments"))
+
+        for arch in A.ARCHETYPES:
+            for narrative in arch.root_cause:
+                text = render(narrative)
+                assert mechanism.names(arch.key, text), f"{arch.key} failed: {text[:70]}"
+                others = [k for k in mechanism.VOCABULARY
+                          if k != arch.key and mechanism.names(k, text)]
+                assert not others, f"{arch.key} narrative also graded as {others}"
+
+    def test_recorded_answers_are_graded_as_what_they_describe(self):
+        """Conclusions recorded on a replay of the 2026-10-12 baseline."""
+        from evals import mechanism
+
+        pool = "connection pool exhaustion, source not yet isolated"
+        assert mechanism.names("db_pool_exhausted", pool)
+        # Run C: the agent examined the database and found the full disk; "disk" is
+        # a tag of the archetype, four letters long.
+        for disk in ["The user-db service is experiencing high disk usage and disk space",
+                     "payment-db became slow due to disk exhaustion, causing timeouts"]:
+            assert mechanism.names("disk_full", disk), disk
+        cascade = "downstream dependency timeout cascading upstream on user-service"
+        assert not mechanism.names("disk_full", cascade)
+        assert mechanism.closest(cascade) == "downstream_timeout_cascade"
+
+    def test_a_wrong_failure_mode_is_named_in_the_failure_note(self):
+        sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == "SC-CA-001")
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause="downstream dependency timeout cascading upstream on user-service",
+            remediation_tool="restart_service",
+            remediation_arguments={"service": sc.true_cause_service})))
+        assert not r.task_success
+        assert r.failure_note.startswith("named the service but not the failure mode "
+                                         "(described downstream_timeout_cascade")
 
     def test_keywords_are_pooled_not_drawn_from_one_variant(self):
         """The pool must be big enough to cover both narratives."""
@@ -296,12 +328,305 @@ class TestArchetypeVariantGrading:
                 )
 
     def test_an_unrelated_answer_still_fails(self):
-        """The pooled vocabulary must not be so broad that anything passes."""
-        sc = next(s for s in load_scenarios(SCENARIO_DIR)
-                  if s.expected_archetype == "disk_full")
+        from evals import mechanism
+
         wrong = "the TLS certificate expired and the load balancer rejected connections"
-        hits = sum(1 for k in sc.root_cause_keywords if k in wrong.lower())
-        assert hits < 2, f"an unrelated diagnosis matched {hits} keywords"
+        assert not mechanism.names("disk_full", wrong)
+
+    def test_other_forms_of_a_keyword_count(self):
+        assert keyword_hits(["exhausted", "connection-pool"], "connection pool exhaustion") == 2
+        assert keyword_hits(["saturation", "provisioned"], "saturated, under-provisioning") == 2
+
+    @pytest.mark.parametrize("text", [
+        "user-db disk is healthy",
+        "the recommendation-service connection pool is healthy; restart it to be safe",
+        "the connection pool is not exhausted",
+        "no sign of disk pressure on user-db",
+        "we checked the disk on user-db and the connection pool settings",
+        "memory looked normal and the heap is stable",
+        "disk_full is ruled out",
+    ])
+    def test_a_healthy_denied_or_merely_mentioned_mechanism_names_no_failure(self, text):
+        from evals import mechanism
+        assert mechanism.closest(text) is None, mechanism.asserted(text)
+
+    def test_a_denied_mechanism_does_not_hide_the_one_asserted_beside_it(self):
+        from evals import mechanism
+        text = "The disk is healthy, but the connection pool is exhausted under load."
+        assert mechanism.closest(text) == "db_pool_exhausted"
+
+    @pytest.mark.parametrize("archetype,text,named", [
+        ("disk_full", "user-db has no disk pressure", False),
+        ("db_pool_exhausted", "No connection pool exhaustion on user-db", False),
+        ("disk_full", "The disk on user-db is full and cpu usage is normal", True),
+        ("disk_full", "cpu usage is normal and the disk on user-db is full", True),
+        ("db_pool_exhausted", "the connection pool is exhausted, with no disk pressure", True),
+        ("disk_full", "the connection pool is exhausted, with no disk pressure", False),
+        ("disk_full", "writes to the disk failed with no space left on device", True),
+    ])
+    def test_a_denial_covers_its_own_part_of_the_sentence(self, archetype, text, named):
+        from evals import mechanism
+        assert mechanism.names(archetype, text) is named, mechanism.asserted(text)
+
+    @pytest.mark.parametrize("archetype,text,named", [
+        # Written apart from the corpus: the right failure in other words, and answers
+        # that name the component without asserting its failure mode.
+        ("db_pool_exhausted", "orders-db ran out of database connections; requests waited "
+                              "for a free one", True),
+        ("db_pool_exhausted", "the pool of connections to payments-db was saturated by "
+                              "long-running queries", True),
+        ("db_pool_exhausted", "the connection pool settings on orders-db look correct; "
+                              "latency came from a slow query", False),
+        ("memory_leak_oom", "checkout-service was OOM-killed repeatedly as its heap kept "
+                            "growing", True),
+        ("memory_leak_oom", "memory usage on checkout-service is steady at 40%", False),
+        ("memory_leak_oom", "memory pressure on redis caused evictions", False),
+        ("bad_deploy_regression", "the v4.2.0 release of cart-service introduced a "
+                                  "serialization bug", True),
+        ("bad_deploy_regression", "cart-service was deployed yesterday with no changes to "
+                                  "the failing path", False),
+        ("downstream_timeout_cascade", "search-service timed out because its downstream "
+                                       "inventory-db was slow, and it cascaded upstream", True),
+        ("cache_stampede", "after the cache was flushed, every request missed and hit the "
+                           "database at once", True),
+        ("cache_stampede", "the cache hit rate is normal", False),
+        ("disk_full", "the data volume of payment-db filled up with WAL files", True),
+        # Recorded answers (phase4 A and B, C):
+        ("disk_full", "payment-db became slow due to disk space issues, causing timeouts in "
+                      "payment-service", True),
+        ("downstream_timeout_cascade", "Degradation in user-db causing timeouts and circuit "
+                                       "breaker OPEN in user-service", True),
+        ("disk_full", "payment-db disk is almost empty", False),
+        ("disk_full", "Disk I/O on payment-db has high latency", False),
+        ("disk_full", "payment-db has a disk hardware failure", False),
+        ("replica_lag", "reads came from a replica that was minutes behind the primary", True),
+        ("replica_lag", "the replica is in sync with the primary", False),
+        ("cert_expiry", "clients failed the TLS handshake because the server certificate "
+                        "had expired", True),
+        ("cert_expiry", "the TLS certificate is valid until 2027", False),
+        ("upstream_rate_limit", "the payment provider returned 429 Too Many Requests", True),
+        ("upstream_rate_limit", "requests to the provider are well under its rate limit", False),
+        ("consumer_lag", "the order-events consumers fell behind and a backlog of messages "
+                         "built up", True),
+        ("consumer_lag", "the consumer group is healthy", False),
+        ("thread_pool_saturation", "all worker threads were stuck waiting on a lock, so the "
+                                   "thread pool was exhausted", True),
+        ("thread_pool_saturation", "the thread count is normal", False),
+        ("config_drift", "the canary pods were missing an environment variable the other "
+                         "pods had", True),
+        ("config_drift", "the config for search-service was reviewed and is correct", False),
+        ("search_shard_unassigned", "two primary shards were unassigned, so queries returned "
+                                    "partial results", True),
+        ("search_shard_unassigned", "the search cluster status is green", False),
+        ("traffic_surge", "a marketing campaign tripled traffic beyond what checkout-service "
+                          "was provisioned for", True),
+        ("traffic_surge", "traffic to checkout-service was normal for a Tuesday", False),
+        ("cache_node_eviction", "redis hit its maxmemory and started evicting frequently used "
+                                "keys", True),
+        ("cache_node_eviction", "redis memory use is stable", False),
+        ("broker_partition_offline", "a kafka broker went down and its partitions were left "
+                                     "without a leader", True),
+        ("broker_partition_offline", "all brokers are online", False),
+    ])
+    def test_answers_written_apart_from_the_corpus(self, archetype, text, named):
+        from evals import mechanism
+        assert mechanism.names(archetype, text) is named, (mechanism.hits(text),
+                                                           mechanism.asserted(text))
+
+    @pytest.mark.parametrize("root_cause,success", [
+        ("payment-db has no disk pressure", False),
+        ("payment-db disk is almost empty", False),
+        ("Disk I/O on payment-db has high latency", False),
+        ("payment-db has a disk hardware failure", False),
+        ("The disk on payment-db is full and cpu usage is normal", True),
+    ])
+    def test_denials_are_graded_through_the_whole_grader(self, root_cause, success):
+        sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == "SC-CA-002")
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause=root_cause, remediation_tool="restart_service",
+            remediation_arguments={"service": "payment-db"})))
+        assert r.task_success is success, r.failure_note
+
+    @pytest.mark.parametrize("arguments", [None, {"service": "payment-db"}])
+    @pytest.mark.parametrize("root_cause,success", [
+        ("payment-db is healthy; payment-service has a full disk.", False),
+        ("payment-db is unwell and payment-service has a full disk", False),
+        ("payment-db does not have a full disk", False),
+        ("payment-db is not running out of disk space", False),
+        ("payment-db's disk is full, and payment-service times out waiting on it", True),
+        ("payment-service is timing out because payment-db ran out of disk space", True),
+        ("payment-db is slow because payment-service has a full disk", False),
+        ("payment-service is slow because payment-db has a full disk", True),
+        ("payment-db has neither a full disk nor memory pressure", False),
+        ("payment-db is slow, but not due to disk exhaustion", False),
+        ("payment-db is slow, not because its disk is full", False),
+        ("payment-db is slow because payment-service is struggling with a full disk", False),
+        ("payment-service is struggling because payment-db is slow with a full disk", True),
+        ("payment-db is slow due to disk exhaustion, not because of a deploy", True),
+        ("payment-db's disk is full; there is neither memory pressure nor cpu load", True),
+        # A coordinated part without a service of its own is about the one before it.
+        ("payment-db is slow because payment-service has high disk usage and disk space "
+         "issues", False),
+        ("payment-db is slow because payment-service has high disk usage, disk space issues",
+         False),
+        ("payment-db is slow because payment-service has high disk usage, and disk space "
+         "issues", False),
+        ("payment-db is slow because payment-service has high disk usage with disk space "
+         "issues", False),
+        ("payment-service is slow because payment-db has high disk usage and disk space "
+         "issues", True),
+        ("payment-service times out, and payment-db is out of disk space", True),
+        ("payment-db is slow, and its disk is full", True),
+        ("payment-service is slow because the disk is full and payment-db is stuck", True),
+    ])
+    def test_the_failure_must_be_asserted_of_the_service_at_fault(self, arguments, root_cause,
+                                                                  success):
+        sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == "SC-CA-002")
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause=root_cause, remediation_tool="restart_service",
+            remediation_arguments=arguments)))
+        assert r.task_success is success, r.failure_note
+
+    @pytest.mark.parametrize("scenario", [s for s in load_scenarios(SCENARIO_DIR)
+                                          if not s.should_abstain], ids=lambda s: s.id)
+    def test_every_scenarios_own_expected_answer_passes(self, scenario):
+        """Its expected root cause, acting on the service at fault with an accepted tool."""
+        from evals.run import _cause
+        tools = scenario.acceptable_remediation_tools
+        r = _grade(scenario, _state(proposal=_proposal(
+            root_cause=scenario.expected_root_cause,
+            remediation_tool=tools[0] if tools else None,
+            remediation_arguments={"service": _cause(scenario)})))
+        assert r.task_success, r.failure_note
+
+    @pytest.mark.parametrize("scenario", [s for s in load_scenarios(SCENARIO_DIR)
+                                          if not s.should_abstain], ids=lambda s: s.id)
+    def test_every_expected_answer_blaming_another_service_fails(self, scenario):
+        """The same answer with another service named where the failure is (or, if it
+        names none, said to be on another service), acting on the right one."""
+        import re
+
+        from evals.run import SERVICE_NAMES, _cause, _mentions
+        cause, text = _cause(scenario), scenario.expected_root_cause
+        avoid = {cause, (scenario.expected_service or "").lower(),
+                 *(v.lower() for v in scenario.victim_services)}
+        wrong = next(s for s in sorted(SERVICE_NAMES)
+                     if s not in avoid and not _mentions(text.lower(), s))
+        blamed = (re.sub(rf"(?<![\w-]){re.escape(cause)}(?![\w-])", wrong, text, flags=re.I)
+                  if _mentions(text.lower(), cause) else f"On {wrong}, {text[0].lower()}{text[1:]}")
+        tools = scenario.acceptable_remediation_tools
+        r = _grade(scenario, _state(proposal=_proposal(
+            root_cause=blamed, remediation_tool=tools[0] if tools else None,
+            remediation_arguments={"service": cause})))
+        assert not r.task_success, blamed
+
+    @pytest.mark.parametrize("root_cause", [
+        "The connection pool on user-service is exhausted.",
+        "The connection pool in user-service is exhausted.",
+        "The connection pool of user-service is exhausted.",
+        "user-service's connections to user-db leaked and were never returned to the pool",
+    ])
+    def test_the_holder_of_the_pool_named_any_way_is_the_service_at_fault(self, root_cause):
+        from evals.run import _cause
+        sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == "SC-SS-004")
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause=root_cause, remediation_tool=sc.acceptable_remediation_tools[0],
+            remediation_arguments={"service": _cause(sc)})))
+        assert r.task_success, r.failure_note
+
+    @pytest.mark.parametrize("scenario_id,root_cause", [
+        # An application named with on, in or of holds the pool; only a store is where
+        # connections go.
+        ("SC-SS-004", "The connection pool on payment-service is exhausted."),
+        ("SC-SS-004", "The connection pool in payment-service is exhausted."),
+        ("SC-SS-004", "The connection pool of payment-service is exhausted."),
+        # The holder named with a possessive keeps the failure.
+        ("SC-SS-004", "payment-service's connections leaked and were never returned to the "
+                      "pool"),
+        # A sentence that goes on without naming a service is about the one before it.
+        ("SC-CA-001", "The data volume on payment-service reached 100%. WAL accumulated "
+                      "because archiving failed."),
+        # The connections go to user-db, but payment-service holds and leaks them.
+        ("SC-SS-004", "payment-service leaked its user-db connections, which were never "
+                      "returned to the pool"),
+        # The retries that amplified the load were user-db's, not user-service's.
+        ("SC-TF-010", "user-db retried failed calls three times with no backoff, tripling "
+                      "load on an already-struggling dependency"),
+    ])
+    def test_the_failure_stays_with_the_service_it_is_spread_over(self, scenario_id,
+                                                                    root_cause):
+        from evals.run import _cause
+        sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == scenario_id)
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause=root_cause, remediation_tool=(sc.acceptable_remediation_tools or [None])[0],
+            remediation_arguments={"service": _cause(sc)})))
+        assert not r.task_success and "failure mode" in r.failure_note
+
+    def test_a_failure_spread_over_two_services_belongs_to_the_one_at_fault(self):
+        """A timeout cascade is the upstream service's failure (no timeout, a breaker),
+        started by a slow dependency; the part naming the service at fault carries no
+        failure word of its own ("circuit breaker OPEN")."""
+        sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == "SC-TF-001")
+        r = _grade(sc, _state(proposal=_proposal(
+            root_cause="Degradation in user-db causing timeouts and circuit breaker OPEN in "
+                       "user-service", remediation_tool="restart_service",
+            remediation_arguments={"service": "user-service"})))
+        assert r.failure_note == "" or "failure mode" not in r.failure_note
+
+    def test_a_regrade_grades_the_service_again_too(self, tmp_path):
+        import json
+
+        from evals.run import ScenarioResult, regrade
+        text = "payment-db is healthy; payment-service has a full disk."
+        saved = ScenarioResult(scenario_id="SC-CA-002", kind="cascading", query="q",
+                               completed=True, task_success=True, identified_cause=True,
+                               correct_remediation=True, graded_text=text, root_cause=text)
+        from incidentiq.config import Settings
+
+        from evals.run import aggregate
+        path = tmp_path / "run.json"
+        path.write_text(json.dumps({"summary": aggregate([saved], Settings(llm_provider="stub")),
+                                    "results": [saved.__dict__]}))
+        old, new = regrade(path)
+        result = json.loads(path.read_text())["results"][0]
+        assert (old["task_completion"], new["task_completion"]) == (1.0, 0.0)
+        assert result["identified_cause"] is False
+
+    def test_advice_against_another_failure_mode_does_not_undo_the_diagnosis(self):
+        """The failure mode is read from the root cause: advice in the remediation and
+        summary (a timeout, a circuit breaker) is in another failure mode's words."""
+        sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == "SC-CA-002")
+        r = _grade(sc, _state(
+            proposal=_proposal(
+                root_cause=("payment-db became slow due to disk exhaustion, causing "
+                            "timeouts in payment-service"),
+                remediation=("Free up disk space on payment-db and add a timeout and "
+                             "circuit breaker on payment-service's calls to payment-db to "
+                             "prevent future outages."),
+                remediation_tool="restart_service",
+                remediation_arguments={"service": "payment-db", "reason": "disk exhaustion"}),
+            final_summary=(
+                "The investigation concluded that payment-db became slow due to disk "
+                "exhaustion, causing timeouts in payment-service. Evidence from logs and "
+                "metrics indicated 'no space left on device' errors on payment-db, which "
+                "coincided with timeouts observed in payment-service logs. The disk space "
+                "issue was resolved by restarting payment-db, and a timeout and circuit "
+                "breaker were proposed to prevent future outages.\n\nStill uncertain: "
+                "whether the timeout and circuit breaker implementation will fully prevent "
+                "future outages without impacting normal operations")))
+        assert r.task_success, r.failure_note
+
+    def test_a_keyword_must_be_a_whole_word_of_the_text(self):
+        # Short tags inside longer words were read as a diagnosis.
+        assert keyword_hits(["oom"], "the service has ample room") == 0
+        assert keyword_hits(["wal"], "the worker walked away") == 0
+        assert keyword_hits(["oom", "wal"], "OOM kills, then the WAL filled the disk") == 2
+        assert keyword_hits(["connection pool"], "all connection-pools were busy") == 1
+        assert keyword_hits(["connection pool"], "a connection from the pool") == 0
+
+    def test_words_that_only_start_alike_do_not_count(self):
+        assert keyword_hits(["capacity", "failing", "timeout"], "capable failure time") == 0
+        assert keyword_hits(["configured"], "the configuration") == 0
 
 
 class TestScenarioFixtures:
@@ -366,16 +691,23 @@ class TestScenarioFixtures:
         from evals import fixtures
         sc = self._scenario("single_service")
         arch = A.BY_KEY[sc.expected_archetype]
+        before = dict(conn.execute(
+            "SELECT id, value FROM metric_points WHERE service = %s AND metric_name = %s",
+            (sc.true_cause_service, arch.metric)).fetchall())
         state = fixtures.apply(conn, sc)
         try:
+            ids = state.metric_ids + [i for i, _ in state.scaled_metrics]
             rows = conn.execute(
-                "SELECT value FROM metric_points WHERE id = ANY(%s)", (state.metric_ids,)
-            ).fetchall()
-            assert rows, f"no {arch.metric} points planted"
+                "SELECT value FROM metric_points WHERE id = ANY(%s)", (ids,)).fetchall()
+            assert rows, f"no {arch.metric} anomaly planted"
             values = [r[0] for r in rows]
             assert max(values) != min(values), "the planted metric is flat"
         finally:
             fixtures.clear(conn, state)
+        after = dict(conn.execute(
+            "SELECT id, value FROM metric_points WHERE service = %s AND metric_name = %s",
+            (sc.true_cause_service, arch.metric)).fetchall())
+        assert after == before, "clearing must restore the corpus readings exactly"
 
     def test_abstention_scenarios_get_no_evidence(self, conn):
         """Their whole point is that there is nothing to find."""
@@ -421,18 +753,19 @@ class TestScenarioFixtures:
         # is checking.
         fixtures.purge_orphans(conn, only_run_id=run_id)
         baseline_logs = conn.execute("SELECT count(*) FROM log_entries").fetchone()[0]
-        baseline_metrics = conn.execute("SELECT count(*) FROM metric_points").fetchone()[0]
+        totals = "SELECT count(*), round(sum(value)::numeric, 3) FROM metric_points"
+        baseline_metrics = conn.execute(totals).fetchone()
 
         try:
             # Simulate a run that dies before its cleanup: apply, then drop the
             # in-process handle entirely.
             state = fixtures.apply(conn, sc, run_id=run_id)
-            assert state.log_ids and state.metric_ids
+            assert state.log_ids and (state.metric_ids or state.scaled_metrics)
             tracked = conn.execute(
                 "SELECT count(*) FROM eval_fixture_rows WHERE run_id = %s", (run_id,)
             ).fetchone()[0]
             assert tracked == (len(state.log_ids) + len(state.metric_ids)
-                               + len(state.deploy_ids))
+                               + len(state.scaled_metrics) + len(state.deploy_ids))
             del state
 
             # A later run purges what the dead one left, from the database
@@ -443,8 +776,8 @@ class TestScenarioFixtures:
             assert purged, "nothing was purged"
             assert conn.execute(
                 "SELECT count(*) FROM log_entries").fetchone()[0] == baseline_logs
-            assert conn.execute(
-                "SELECT count(*) FROM metric_points").fetchone()[0] == baseline_metrics
+            # Same rows and the same readings: scaled ones are restored.
+            assert conn.execute(totals).fetchone() == baseline_metrics
             assert conn.execute(
                 "SELECT count(*) FROM eval_fixture_rows WHERE run_id = %s", (run_id,)
             ).fetchone()[0] == 0
@@ -536,14 +869,8 @@ class TestFailedActionGrading:
 
 
 class TestVictimDetection:
-    """Mentioning a service is not diagnosing it.
-
-    Observed: expected replica_lag on order-db with order-service as a victim.
-    The agent concluded "thread pool saturation in the order-service" and
-    restarted order-service - textbook victim-blaming. It was graded "not the
-    failure mode" instead, because the prose said "involving the order-db" in
-    passing and the substring check credited that as identifying the cause.
-    """
+    """Mentioning a service is not diagnosing it: naming or acting on a victim is
+    reported as such."""
 
     def test_acting_on_the_victim_is_named_as_such(self):
         sc = Scenario(id="X", kind="cascading", query="q",
@@ -845,3 +1172,19 @@ class TestResumability:
         todo = [sid for sid in all_ids if sid not in completed]
         assert todo == all_ids[6:]
         assert len(todo) == 4
+
+
+def _cases():
+    import yaml
+    return yaml.safe_load((ROOT / "evals" / "grader_cases.yaml").read_text())
+
+
+@pytest.mark.parametrize("case", _cases(),
+                         ids=lambda c: f"{c['scenario']}-{c['root_cause'][:30]}")
+def test_the_grader_agrees_with_the_hand_labels_on_every_real_answer(case):
+    """evals/grader_cases.yaml: the agent's own root causes from the Phase 4 runs, labeled
+    by reading them, so the grades those runs report hold."""
+    from evals.run import ScenarioResult, _mechanism
+    sc = next(s for s in load_scenarios(SCENARIO_DIR) if s.id == case["scenario"])
+    r = ScenarioResult(scenario_id=sc.id, kind=sc.kind, query="q", root_cause=case["root_cause"])
+    assert _mechanism(sc, r)[0] is case["states_it"]

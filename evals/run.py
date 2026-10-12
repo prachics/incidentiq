@@ -5,19 +5,16 @@
     python -m evals.run --kind cascading     # one category
     python -m evals.run --limit 10           # a dev subset
     python -m evals.run --no-judge           # skip groundedness (much faster)
+    python -m evals.run --replay evals/results/run_X.json   # rerun only its failures
+    python -m evals.run --regrade evals/results/run_X.json  # grade its saved answers again
 
 Writes a timestamped JSON file and a markdown summary to evals/results/.
 
-Grading philosophy
-------------------
-Every metric is computed from structured facts about the run - which tools were
-called, which service was named, whether the agent abstained - rather than from
-prose comparison. Free-text similarity between the agent's root cause and the
-expected one would measure phrasing, and would quietly reward a model that
-writes fluently about the wrong thing.
-
-The one place prose is unavoidable is groundedness, which is why the judge's
-limitations are documented in `judge.py` and reported alongside the number.
+Grading is from facts about the run (which tools were called, which service the
+agent acted on, whether it abstained) and from two readings of its prose: the
+service it names, and the failure mode its stated root cause asserts, against
+each archetype's vocabulary (evals/mechanism.py). Groundedness, when judged, is
+the judge's (judge.py), reported with its limits.
 """
 
 from __future__ import annotations
@@ -26,6 +23,7 @@ import argparse
 import json
 import math
 import os
+import re
 import statistics
 import sys
 import time
@@ -37,13 +35,17 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "api"))
+sys.path.insert(0, str(REPO_ROOT / "seeds"))
 
+import catalog  # noqa: E402
 from incidentiq.config import Settings, get_settings  # noqa: E402
 
-from evals import fixtures  # noqa: E402
+from evals import fixtures, mechanism  # noqa: E402
 from evals.scenario import Scenario, load_scenarios  # noqa: E402
+from evals.words import keyword_hits  # noqa: E402
 
 SCENARIO_DIR = REPO_ROOT / "evals" / "scenarios"
+SERVICE_NAMES = {s.name.lower() for s in catalog.SERVICES}
 # Set from --max-iterations so it lands in the results file: a run with a
 # reduced budget is not comparable with a full one, and the number must say so.
 ITERATION_CAP: int | None = None
@@ -52,10 +54,8 @@ ITERATION_CAP: int | None = None
 RUN_ID: str = "adhoc"
 RESULTS_DIR = REPO_ROOT / "evals" / "results"
 
-# Results are appended here one line at a time as each scenario finishes, so an
-# interrupted run keeps everything it had already done. A 100-scenario suite is a
-# multi-hour job on local inference; losing it to a sleeping laptop at scenario 80
-# is not an acceptable failure mode.
+# Results are appended one line at a time as each scenario finishes, so an
+# interrupted run keeps what it had done (--resume).
 PROGRESS_DIR = RESULTS_DIR / "progress"
 
 
@@ -97,6 +97,13 @@ class ScenarioResult:
     error: str | None = None
     failure_note: str = ""            # why it failed, for the failure analysis
 
+    # What the agent concluded, so a failure can be read rather than guessed at;
+    # `graded_text` is exactly what the grader read, so a result can be regraded.
+    graded_text: str = ""
+    root_cause: str = ""
+    remediation_tool: str | None = None
+    remediation_arguments: dict[str, Any] = field(default_factory=dict)
+
 
 def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
     proposal = state.get("proposal") or {}
@@ -118,16 +125,13 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
         injected_failures=sum(1 for c in calls if c.get("injected_failure")),
     )
     r.expected_tools_hit = sum(1 for t in scenario.expected_tools if t in r.tools_called)
+    r.root_cause = str(proposal.get("root_cause") or "")
+    tool = proposal.get("remediation_tool")
+    r.remediation_tool = tool if isinstance(tool, str) else None
+    arguments = proposal.get("remediation_arguments")
+    r.remediation_arguments = arguments if isinstance(arguments, dict) else {}
 
-    # Recovery: a tool that failed on one attempt and succeeded on a later one.
-    by_tool: dict[str, list[dict]] = {}
-    for c in calls:
-        by_tool.setdefault(c["tool_name"], []).append(c)
-    r.recovered_from_failure = any(
-        any(a["status"] not in ("success", "partial") for a in attempts)
-        and any(a["status"] in ("success", "partial") for a in attempts)
-        for attempts in by_tool.values()
-    )
+    r.recovered_from_failure = recovered(calls)
 
     # An investigation whose approved action failed to execute has not completed
     # its task, however good the diagnosis was.
@@ -151,12 +155,8 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
         return r
 
     # ── Did it name the right service? ──────────────────────
-    # Grade against the agent's WHOLE conclusion, not one field of it. Grading
-    # on root_cause + remediation alone marked a correct answer wrong: the agent
-    # concluded "disk exhaustion on catalog-db with confidence 0.9", named the
-    # service in its summary and in the remediation arguments, and simply did
-    # not repeat it inside the root_cause string. Which field a model puts the
-    # service name in is not something the agent should be scored on.
+    # Anywhere in the conclusion: which field a model names the service in (root
+    # cause, summary or the action's arguments) is not what is being scored.
     text = " ".join([
         str(proposal.get("root_cause") or ""),
         str(proposal.get("remediation") or ""),
@@ -165,58 +165,148 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
         json.dumps(proposal.get("remediation_arguments") or {}, default=str),
         str(state.get("final_summary") or ""),
     ]).lower()
-    cause_service = (scenario.true_cause_service or scenario.expected_service or "").lower()
-    r.identified_cause = bool(cause_service) and cause_service in text
+    r.graded_text = text
+    _identify(scenario, r)
 
-    # Blaming the victim is the characteristic wrong answer for a cascading
-    # scenario, and the pattern the suite exists to detect - so it is named
-    # rather than folded into a generic miss.
-    #
-    # The signal is what the agent proposes to ACT on, not what its prose
-    # mentions. An agent that restarted order-service while the cause was
-    # replica lag on order-db was credited with identifying the cause, because
-    # it had written "involving the order-db" in passing. Mentioning a service
-    # is not diagnosing it.
-    # Everything read out of `proposal` comes from a language model, so nothing
-    # about its type is guaranteed. `remediation_arguments["service"]` arrived
-    # as a non-string and crashed the grader mid-run, losing the scenario. A
-    # grader that can be crashed by unexpected model output is a harness bug:
-    # the agent is allowed to produce nonsense, and the harness has to score it.
-    raw_args = proposal.get("remediation_arguments")
-    target = raw_args.get("service") if isinstance(raw_args, dict) else None
+    # ── Remediation ─────────────────────────────────────────
+    if scenario.acceptable_remediation_tools:
+        r.correct_remediation = r.remediation_tool in scenario.acceptable_remediation_tools
+    else:
+        r.correct_remediation = True   # no specific action expected
+
+    _verdict(scenario, r)
+    return r
+
+
+def _cause(scenario: Scenario) -> str:
+    return (scenario.true_cause_service or scenario.expected_service or "").lower()
+
+
+def _identify(scenario: Scenario, r: ScenarioResult) -> None:
+    """Whether the conclusion names the service at fault as failing, or acts on it.
+
+    Named where a failure is asserted, not anywhere: "payment-db is healthy;
+    payment-service has a full disk" mentions payment-db and clears it. On a
+    cascading scenario, acting on a victim, or naming only a victim as failing, is
+    the characteristic wrong answer and is named as such. Everything read here came
+    from a language model, so no type is assumed."""
+    cause = _cause(scenario)
+    asserted = mechanism.asserted(r.graded_text)
+    target = r.remediation_arguments.get("service") if isinstance(r.remediation_arguments, dict) \
+        else None
     target = target.lower() if isinstance(target, str) else None
+    r.identified_cause = bool(cause) and (_mentions(asserted, cause) or target == cause)
     victims = {v.lower() for v in scenario.victim_services if isinstance(v, str)}
-    acted_on_victim = bool(target) and target in victims and target != cause_service
+    acted_on_victim = bool(target) and target in victims and target != cause
     if scenario.kind == "cascading" and (acted_on_victim or not r.identified_cause):
-        if acted_on_victim or any(v.lower() in text for v in scenario.victim_services):
-            r.identified_cause = False if acted_on_victim else r.identified_cause
+        if acted_on_victim or any(_mentions(asserted, v) for v in victims):
+            r.identified_cause = False
             r.failure_note = ("acted on the victim service instead of the downstream cause"
                               if acted_on_victim else
                               "blamed the victim service instead of the downstream cause")
 
-    # ── Did it describe the right mechanism? ────────────────
-    # Keywords are pooled across every narrative variant of the archetype (see
-    # evals/generate_scenarios._archetype_keywords), so the pool is larger and a
-    # proportion threshold no longer means anything stable. Ask for a small
-    # absolute number of hits instead: enough that the agent clearly named this
-    # failure mode, few enough that it is not required to echo one variant's
-    # exact phrasing.
-    MIN_KEYWORD_HITS = 2
+
+def _bound(scenario: Scenario, archetype: str, text: str) -> bool:
+    """Whether the failure is asserted of the service at fault. Each smallest span of a
+    clause that asserts it (a segment, or neighbouring segments when the phrasing runs
+    across them: "retried with no backoff, tripling load") has owners: the services it
+    names. The failure is bound when a span names the service at fault, or when no
+    span names any service; a span that names only another service is a conflicting
+    attribution, which an unattributed span elsewhere does not outweigh. A coordinated
+    part, or a clause that opens without naming a service, is about the one named
+    before it ("payment-service has high disk usage and disk space issues"; "The volume
+    on payment-service filled. WAL accumulated."), and a service named as where connections
+    go ("all user-db connections", "connections to user-db") is not their owner; one
+    named as holding them ("payment-service's connections") is."""
+    cause = _cause(scenario)
+
+    def named(text: str) -> set[str]:
+        return {s for s in SERVICE_NAMES if _mentions(_CONNECTED_TO.sub(" ", text), s)}
+
+    owners_found: list[set[str]] = []
+    subject: set[str] = set()
+    for clause, fails in mechanism.clauses(text):
+        owners = []
+        for i, segment in enumerate(clause):
+            services = named(segment.text or segment.written)
+            # A coordinated part, or a sentence that goes on about what came before,
+            # is about the service last named.
+            if not services and (segment.joined or i == 0):
+                services = subject
+            subject = services
+            owners.append(services)
+        if not fails:
+            continue
+        spans = [(s.text, owner) for s, owner in zip(clause, owners, strict=True) if s.text]
+        for start, end in _smallest_matches([t for t, _ in spans], archetype):
+            owners_found.append(set().union(*(o for _, o in spans[start:end])))
+    if any(cause in owner for owner in owners_found):
+        return True
+    return bool(owners_found) and not any(owners_found)
+
+
+# Where connections go or what a cache holds, not who holds them: anything connections
+# go "to" ("connection pool to catalog-db"), and a store (a database, cache, search
+# cluster or queue) named as the far end ("user-db connections", "the pool on user-db",
+# "the fraud-db entries"). An application named on, in, of or for a pool holds it
+# ("the connection pool on payment-service"), as does a possessive. And "a cache flush
+# left X empty" names the cache, not the culprit.
+_STORES = "|".join(re.escape(s.name) for s in sorted(
+    catalog.SERVICES, key=lambda s: -len(s.name))
+    if s.kind in ("datastore", "cache", "search", "queue"))
+_CONNECTED_TO = re.compile(
+    r"\b(?:connection\s+)?(?:connections?|pool)\s+(?:to|into)\s+[a-z][a-z0-9-]*\b|"
+    rf"\b(?:connection\s+)?(?:connections?|pool|cache|entries)\s+(?:on|for|of|in)\s+"
+    rf"(?:{_STORES})(?![\w-])|"
+    rf"(?<![\w-])(?:{_STORES})\s+(?:db\s+)?(?:connections?|pool|cache|entries)\b|"
+    r"\bflush\w*\b.{0,40}?\bleft\s+(?:the\s+)?[a-z][a-z0-9-]*\s+(?:cache\s+)?empty\b")
+
+
+def _smallest_matches(texts: list[str], archetype: str) -> list[tuple[int, int]]:
+    """The spans [start, end) of neighbouring texts whose joined text asserts the
+    archetype while no shorter span inside them does."""
+    found: list[tuple[int, int]] = []
+    for length in range(1, len(texts) + 1):
+        for start in range(len(texts) - length + 1):
+            end = start + length
+            if any(s >= start and e <= end for s, e in found):
+                continue
+            if mechanism.matches(" ".join(texts[start:end]))[archetype]:
+                found.append((start, end))
+    return found
+
+
+def _mentions(text: str, service: str) -> bool:
+    """The service's name as a name of its own, not inside a longer one."""
+    return re.search(rf"(?<![\w-]){re.escape(service)}(?![\w-])", text) is not None
+
+
+def _mechanism(scenario: Scenario, r: ScenarioResult) -> tuple[bool, str | None]:
+    """Whether the agent's stated root cause describes the scenario's failure mode
+    (one of its assertion phrasings, and no other archetype's matched more: see
+    evals/mechanism.py), and if not, the one it describes. The root cause alone is
+    read: the remediation and the
+    summary give advice ("add a circuit breaker to prevent this") in the words of
+    other failure modes. Scenarios without an archetype use their listed keywords."""
+    text = r.root_cause.lower()
+    if scenario.expected_archetype in mechanism.VOCABULARY:
+        vocabulary = mechanism.VOCABULARY[scenario.expected_archetype]
+        r.total_keywords = len(vocabulary)
+        r.matched_keywords = keyword_hits(vocabulary, mechanism.asserted(text))
+        if mechanism.names(scenario.expected_archetype, text) \
+                and _bound(scenario, scenario.expected_archetype, text):
+            return True, None
+        return False, mechanism.closest(text)
     r.total_keywords = len(scenario.root_cause_keywords)
-    r.matched_keywords = sum(1 for k in scenario.root_cause_keywords if k in text)
-    mechanism_ok = (
-        r.total_keywords == 0 or r.matched_keywords >= min(MIN_KEYWORD_HITS, r.total_keywords)
-    )
+    r.matched_keywords = keyword_hits(scenario.root_cause_keywords, text)
+    return (r.total_keywords == 0
+            or r.matched_keywords >= min(mechanism.MIN_HITS, r.total_keywords)), None
 
-    # ── Remediation ─────────────────────────────────────────
-    proposed_tool = proposal.get("remediation_tool")
-    if not isinstance(proposed_tool, str):
-        proposed_tool = None
-    if scenario.acceptable_remediation_tools:
-        r.correct_remediation = proposed_tool in scenario.acceptable_remediation_tools
-    else:
-        r.correct_remediation = True   # no specific action expected
 
+def _verdict(scenario: Scenario, r: ScenarioResult) -> None:
+    """Task success, and why not, once the facts are in."""
+    mechanism_ok, described = _mechanism(scenario, r)
+    proposed_tool = r.remediation_tool
     r.task_success = bool(r.completed and r.identified_cause and mechanism_ok
                           and r.correct_remediation)
 
@@ -226,13 +316,55 @@ def _grade(scenario: Scenario, state: dict) -> ScenarioResult:
         elif not r.identified_cause:
             r.failure_note = "did not name the causing service"
         elif not mechanism_ok:
-            r.failure_note = (f"named the service but not the failure mode "
-                              f"({r.matched_keywords} of {r.total_keywords} archetype "
-                              f"terms matched, needed {MIN_KEYWORD_HITS})")
+            closer = f"described {described}; " if described else ""
+            r.failure_note = (f"named the service but not the failure mode ({closer}"
+                              f"{r.matched_keywords} of {r.total_keywords} "
+                              f"{scenario.expected_archetype or 'expected'} terms)")
         elif not r.correct_remediation:
             r.failure_note = (f"proposed {proposed_tool!r}, expected one of "
                               f"{scenario.acceptable_remediation_tools}")
-    return r
+
+
+# Notes the grading of a conclusion writes. A result failed for anything else
+# (abstaining, an approval refused, an action that failed, a harness error) failed
+# before its conclusion was graded, and a regrade leaves it as it was.
+_VERDICT_NOTES = ("did not reach a conclusion", "did not name the causing service",
+                  "named the service but not the failure mode", "proposed ",
+                  "acted on the victim service", "blamed the victim service")
+
+
+def regrade(path: Path) -> tuple[dict, dict]:
+    """Grade a results file's saved conclusions again with the current grader, in
+    place, and write its markdown beside it. Returns the old and new summaries."""
+    data = json.loads(path.read_text())
+    if any("root_cause" not in r for r in data["results"]):
+        raise ValueError(f"{path} predates saved root causes, so it cannot be regraded")
+    recorded = data["summary"].get("scenarios_sha256")
+    if recorded is not None and recorded != provenance()["scenarios_sha256"]:
+        raise ValueError(f"the scenario files have changed since {path} ran, so its answers "
+                         "would be graded against other expectations")
+    scenarios = {s.id: s for s in load_scenarios(SCENARIO_DIR)}
+    results = [ScenarioResult(**r) for r in data["results"]]
+    for r in results:
+        sc = scenarios[r.scenario_id]
+        if sc.should_abstain or r.abstained or r.error:
+            continue
+        if r.failure_note and not r.failure_note.startswith(_VERDICT_NOTES):
+            continue
+        r.failure_note = ""
+        _identify(sc, r)
+        _verdict(sc, r)
+    old = data["summary"]
+    new = {**old, "task_completion": round(sum(r.task_success for r in results)
+                                           / len(results), 4),
+           "regraded_with": provenance()["revision"]}
+    for kind, row in new.get("by_kind", {}).items():
+        subset = [r for r in results if r.kind == kind]
+        row["task_completion"] = round(sum(r.task_success for r in subset) / len(subset), 4)
+    stamp = datetime.fromisoformat(old["generated_at"]).strftime("%Y%m%dT%H%M%SZ")
+    write_report(new, results, failure_analysis(results), stamp,
+                 json_path=path, md_path=path.with_suffix(".md"))
+    return old, new
 
 
 def progress_path(settings: Settings, kind: str | None, cap: int | None,
@@ -251,7 +383,7 @@ def progress_path(settings: Settings, kind: str | None, cap: int | None,
     }.get(settings.llm_provider, settings.llm_provider)
     model = model.replace(":", "-").replace("/", "-")
     parts = [settings.llm_provider, model, f"cap{cap or 'full'}",
-             "judged" if judged else "nojudge", kind or "all"]
+             "judged" if judged else "nojudge", f"seed{settings.llm_seed}", kind or "all"]
     return PROGRESS_DIR / ("progress_" + "_".join(parts) + ".jsonl")
 
 
@@ -272,6 +404,36 @@ def load_progress(path: Path) -> dict[str, ScenarioResult]:
             # Skip it; that scenario simply re-runs.
             continue
     return done
+
+
+def stamp_path(progress: Path) -> Path:
+    """Beside a progress file: the revision and scenario files it was started with."""
+    return progress.with_name(progress.stem + ".provenance.json")
+
+
+def progress_stamp(settings: Settings, scenarios: list[Scenario]) -> dict[str, Any]:
+    """What a run's results depend on besides the options in its progress file's name:
+    the code, the scenario files, the execution settings and the scenarios chosen."""
+    return {**provenance(), "execution": {name: getattr(settings, name) for name in EXECUTION},
+            "scenario_ids": sorted(s.id for s in scenarios)}
+
+
+def resumable(progress: Path, current: dict[str, Any]) -> str | None:
+    """Why this run may not continue a progress file, or None. Results made by another
+    revision, on other scenarios or with other settings would be reported as this run's."""
+    if current.get("execution", {}).get("control_plane_url"):
+        return ("actions go to an external control plane, whose fault settings are that "
+                "server's: a resumed run could not be told from a mixed one")
+    stamp = stamp_path(progress)
+    if not stamp.exists():
+        return "it does not record the revision, settings and scenarios it was started with"
+    started = json.loads(stamp.read_text())
+    differ = sorted(k for k in started.keys() | current.keys() if started.get(k) != current.get(k))
+    if differ:
+        return f"it was started with a different {', '.join(differ)}"
+    if current["revision"].endswith("-dirty"):
+        return "uncommitted changes cannot be told apart from other uncommitted changes"
+    return None
 
 
 def append_progress(path: Path, result: ScenarioResult) -> None:
@@ -305,24 +467,25 @@ def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None,
             seeded = fixtures.apply(runner.conn, scenario, run_id=RUN_ID)
             state = runner.start(incident_id, scenario.query, reset=True)
 
-            # Approval-gated scenarios: record the human decision and resume,
-            # so the interrupt/resume path is exercised rather than assumed.
+            # Approval-gated scenarios: decide and resume, so the interrupt/resume
+            # path is exercised rather than assumed.
             result_holder: dict[str, Any] = {}
+            refused = None
+            edited = None
             if state.get("status") == "awaiting_approval":
-                pending = state.get("pending_approval") or {}
-                decision = {"approve": "approved", "reject": "rejected",
-                            "modify": "approved"}[scenario.approval_decision or "approve"]
-                runner.conn.execute(
-                    "UPDATE approvals SET decision = %s, decided_by = 'eval-harness', "
-                    "decided_at = now(), rejection_reason = %s WHERE id = %s",
-                    (decision,
-                     "the eval harness rejected this action" if decision == "rejected" else None,
-                     pending.get("approval_id")),
-                )
-                state = runner.resume(incident_id)
-                result_holder["approval_resolved"] = True
+                approval_id = (state.get("pending_approval") or {}).get("approval_id")
+                refused, edited = _decide(cfg, approval_id, scenario)
+                if refused is None:
+                    state = runner.resume_for_decision(incident_id, approval_id)
+                    result_holder["approval_resolved"] = True
+                    if edited is not None:
+                        refused = _ran_edited(cfg, approval_id, edited)
 
             r = _grade(scenario, state)
+            if refused is not None:
+                # A human could not have approved it either: the run stops here.
+                r.completed = r.task_success = False
+                r.failure_note = f"the approval was refused: {refused}"
             r.latency_s = round(time.perf_counter() - started, 2)
             r.approval_requested = bool(state.get("pending_approval"))
             r.approval_resolved = bool(result_holder.get("approval_resolved"))
@@ -344,18 +507,145 @@ def run_scenario(scenario: Scenario, settings: Settings, judge_llm=None,
         )
     finally:
         # Always clean up, including on failure. Leaked fixture rows would make
-        # every later scenario for that service look like it had evidence it
-        # was never given.
+        # every later scenario for that service look like it had evidence it was
+        # never given, so a cleanup that fails stops the run (CleanupFailed); the
+        # next run's purge restores the corpus from the tracking rows.
         if seeded is not None:
+            import psycopg as _pg
             try:
-                import psycopg as _pg
                 with _pg.connect(cfg.database_url, autocommit=True) as c:
                     fixtures.clear(c, seeded)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:
+                raise CleanupFailed(scenario.id, exc) from exc
 
 
-def aggregate(results: list[ScenarioResult], settings: Settings) -> dict[str, Any]:
+class CleanupFailed(Exception):
+    """A scenario's fixtures could not be removed: no other scenario may run on the
+    corpus as it was left."""
+
+    def __init__(self, scenario_id: str, cause: Exception):
+        super().__init__(f"cleaning up {scenario_id} failed: {type(cause).__name__}: {cause}")
+
+
+class _NoWorker:
+    """The decision endpoint queues a resume; the harness resumes in process."""
+
+    def resume_after_decision(self, investigation_id: str, approval_id: str) -> None:
+        pass
+
+
+def _decide(settings: Settings, approval_id: str | None,
+            scenario: Scenario) -> tuple[str | None, dict[str, Any] | None]:
+    """Decide through the same code as POST /approvals/{id}/decision, so the
+    harness is refused exactly where a human approver would be (arguments that
+    cannot be executed, for example). Returns why it was refused (or None) and,
+    for a "modify" scenario, the edited arguments it approved."""
+    import psycopg as _pg
+    from fastapi import HTTPException
+    from incidentiq.api.approvals import DecisionIn, decide
+    from incidentiq.api.auth import Principal
+    from psycopg.rows import dict_row
+
+    edited = None
+    with _pg.connect(settings.database_url, autocommit=True, row_factory=dict_row) as conn:
+        if scenario.approval_decision == "reject":
+            body = DecisionIn(decision="reject", reason="the eval harness rejected this action")
+        elif scenario.approval_decision == "modify":
+            row = conn.execute("SELECT proposed_tool, proposed_arguments FROM approvals "
+                               "WHERE id = %s", (approval_id,)).fetchone()
+            edited = (edit_arguments(row["proposed_tool"], row["proposed_arguments"])
+                      if row else None)
+            body = DecisionIn(decision="approve", arguments=edited)
+        else:
+            body = DecisionIn(decision="approve")
+        try:
+            decide(approval_id or "", body, conn, Principal("eval-harness", "approver"),
+                   _NoWorker())
+        except HTTPException as exc:
+            detail = exc.detail
+            if isinstance(detail, dict):
+                errors = "; ".join(e["msg"] for e in detail.get("errors", []))
+                detail = f"{detail.get('message')}: {errors}" if errors else detail.get("message")
+            return f"{exc.status_code} {detail}", edited
+    return None, edited
+
+
+def edit_arguments(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """The edit an approver makes in a "modify" scenario, the same every run: a
+    reason of their own, and for scaling, one replica more."""
+    edited = {**arguments, "reason": "edited by the approver: " + str(arguments.get("reason", ""))}
+    if tool == "scale_service":
+        edited["replica_count"] = min(50, int(arguments.get("replica_count") or 1) + 1)
+    return edited
+
+
+def _ran_edited(settings: Settings, approval_id: str, edited: dict[str, Any]) -> str | None:
+    """None if the approval was recorded as modified and the action ran with the
+    edited arguments; otherwise what went wrong."""
+    import psycopg as _pg
+    from psycopg.rows import dict_row
+
+    with _pg.connect(settings.database_url, autocommit=True, row_factory=dict_row) as conn:
+        decision = conn.execute("SELECT decision FROM approvals WHERE id = %s",
+                                (approval_id,)).fetchone()
+        action = conn.execute("SELECT arguments FROM actions WHERE approval_id = %s",
+                              (approval_id,)).fetchone()
+    if not decision or decision["decision"] != "modified":
+        return f"the edit was recorded as {decision and decision['decision']!r}, not 'modified'"
+    if not action or action["arguments"] != edited:
+        return "the action did not run with the edited arguments"
+    return None
+
+
+def recovered(calls: list[dict[str, Any]]) -> bool:
+    """An injected failure followed by a successful retry of the same call: the
+    same tool with the same arguments. Another tool's success, a success before
+    the failure, or a failure nobody injected is not a recovery."""
+    def same(c: dict[str, Any]) -> tuple[str, str]:
+        return c["tool_name"], json.dumps(c.get("arguments") or {}, sort_keys=True)
+
+    return any(
+        c.get("injected_failure") and any(
+            same(d) == same(c) and d["status"] in ("success", "partial") for d in calls[i + 1:])
+        for i, c in enumerate(calls))
+
+# What a run's numbers depend on besides its settings: the agent and the harness,
+# and the seeds the fixtures and the grader import (archetypes, catalog, generator).
+CODE = ("api", "evals", "seeds")
+
+
+def provenance(root: Path = REPO_ROOT) -> dict[str, str]:
+    """What produced a run's numbers: the code's revision (marked if the agent, the
+    harness or the seeds they import had uncommitted changes; results files aside)
+    and a fingerprint of the scenario files."""
+    import hashlib
+    import subprocess
+
+    try:
+        git = ["git", "-C", str(root)]
+        revision = subprocess.run([*git, "rev-parse", "--short", "HEAD"], capture_output=True,
+                                  text=True, check=True).stdout.strip()
+        changed = subprocess.run([*git, "status", "--porcelain", "--", *CODE,
+                                  ":(exclude)evals/results"],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        revision += "-dirty" if changed else ""
+    except (OSError, subprocess.CalledProcessError):
+        revision = "unknown"
+    digest = hashlib.sha256()
+    for path in sorted((root / "evals" / "scenarios").glob("*.yaml")):
+        digest.update(path.name.encode() + b"\0" + path.read_bytes())
+    return {"revision": revision, "scenarios_sha256": digest.hexdigest()[:16]}
+
+
+# Settings besides the model that change what a run does, recorded so a replay can
+# restore them; none is a secret.
+EXECUTION = ("tool_max_retries", "failure_injection_seed", "control_plane_url",
+             "control_plane_timeout_s", "control_plane_fault_rate", "action_max_attempts",
+             "action_backoff_s", "embedding_provider", "embedding_model", "embedding_dim")
+
+
+def aggregate(results: list[ScenarioResult], settings: Settings,
+              judge: bool = False) -> dict[str, Any]:
     n = len(results)
     if not n:
         return {}
@@ -384,11 +674,15 @@ def aggregate(results: list[ScenarioResult], settings: Settings) -> dict[str, An
 
     return {
         "generated_at": datetime.now(UTC).isoformat(),
+        **provenance(),
         "n_scenarios": n,
         "model": settings.ollama_model if settings.llm_provider == "ollama"
                  else settings.anthropic_model,
         "provider": settings.llm_provider,
         "iteration_cap_override": ITERATION_CAP,
+        "seed": settings.llm_seed,
+        "judge": judge,
+        "execution": {name: getattr(settings, name) for name in EXECUTION},
         "task_completion": round(sum(r.task_success for r in results) / n, 4),
         "grounded_response_rate": (
             round(sum(bool(r.fully_grounded) for r in judged) / len(judged), 4)
@@ -444,10 +738,11 @@ def failure_analysis(results: list[ScenarioResult]) -> dict[str, int]:
 
 
 def write_report(summary: dict, results: list[ScenarioResult], failures: dict,
-                 stamp: str) -> tuple[Path, Path]:
+                 stamp: str, json_path: Path | None = None,
+                 md_path: Path | None = None) -> tuple[Path, Path]:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    json_path = RESULTS_DIR / f"run_{stamp}.json"
-    md_path = RESULTS_DIR / f"run_{stamp}.md"
+    json_path = json_path or RESULTS_DIR / f"run_{stamp}.json"
+    md_path = md_path or RESULTS_DIR / f"run_{stamp}.md"
 
     json_path.write_text(json.dumps(
         {"summary": summary, "failure_analysis": failures,
@@ -504,7 +799,7 @@ def write_report(summary: dict, results: list[ScenarioResult], failures: dict,
     if summary.get("iteration_cap_override"):
         lines += ["", "> **Reduced iteration budget.** Every scenario was capped at "
                   f"{summary['iteration_cap_override']} iterations rather than its own "
-                  "budget of 4-8. Task completion is therefore a lower bound, and this "
+                  "budget of 4-8. Task completion measures the capped agent, and this "
                   "run is not comparable with an uncapped one."]
 
     if summary.get("grounded_response_rate") is not None:
@@ -518,6 +813,46 @@ def write_report(summary: dict, results: list[ScenarioResult], failures: dict,
 
     md_path.write_text("\n".join(lines) + "\n")
     return json_path, md_path
+
+
+def run_all(todo: list[Scenario], settings: Settings, judge_llm, cap: int | None,
+            progress: Path) -> list[ScenarioResult]:
+    """Run the scenarios in turn, each result saved before the next starts. A cleanup
+    that fails (CleanupFailed) ends the run there."""
+    results = []
+    for i, scenario in enumerate(todo, 1):
+        r = run_scenario(scenario, settings, judge_llm, cap)
+        results.append(r)
+        # Write before printing: if the process dies during the next scenario,
+        # this one is already safe on disk.
+        append_progress(progress, r)
+        mark = "ok  " if r.task_success else ("ERR " if r.error else "fail")
+        print(f"  [{i:>3}/{len(todo)}] {mark} {r.scenario_id:<12} "
+              f"{r.latency_s:>6.1f}s  {r.failure_note[:58]}")
+    return results
+
+
+def replay_plan(path: Path) -> tuple[list[str], dict[str, Any], dict[str, Any]]:
+    """The scenarios that failed in a results file, the options to rerun them with
+    (model, iteration cap, judge, seed) and the execution settings (failure injection,
+    retries, control plane): all as that run had them, or the comparison is void."""
+    source = json.loads(path.read_text())
+    base = source["summary"]
+    if "execution" not in base or "judge" not in base:
+        raise ValueError(f"{path} does not record its execution settings, so a replay "
+                         "could not reproduce them")
+    if base["execution"].get("control_plane_url"):
+        raise ValueError(f"{path} sent its actions to an external control plane, whose fault "
+                         "settings are that server's and are not recorded, so a replay could not "
+                         "reproduce them")
+    if base.get("scenarios_sha256") != provenance()["scenarios_sha256"]:
+        raise ValueError(f"the scenario files have changed since {path} ran (a failure rate, "
+                         "a query or a fixture may differ), so a replay would not rerun them")
+    failed = [r["scenario_id"] for r in source["results"] if not r["task_success"]]
+    options = {"provider": base["provider"], "model": base["model"],
+               "max_iterations": base.get("iteration_cap_override"),
+               "no_judge": not base["judge"], "seed": base.get("seed")}
+    return failed, options, dict(base["execution"])
 
 
 def main() -> int:
@@ -541,12 +876,50 @@ def main() -> int:
                              "one in flight.")
     parser.add_argument("--no-judge", action="store_true",
                         help="skip groundedness scoring (roughly halves runtime)")
+    parser.add_argument("--replay", metavar="RUN_JSON",
+                        help="rerun only the scenarios that failed in this results file, "
+                             "with its model, iteration cap and judge setting")
+    parser.add_argument("--seed", type=int, default=7,
+                        help="sampling seed for the local model (default 7), so a rerun "
+                             "differs only where the code does")
     parser.add_argument("--provider", help="override LLM_PROVIDER")
     parser.add_argument("--model", help="override the model name")
+    parser.add_argument("--regrade", metavar="RUN_JSON", nargs="+",
+                        help="grade these results files' saved conclusions again with the "
+                             "current grader, in place; no model is run")
     args = parser.parse_args()
 
+    if args.regrade:
+        for path in map(Path, args.regrade):
+            try:
+                old, new = regrade(path)
+            except ValueError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            print(f"{path}: task completion {old['task_completion']:.1%} -> "
+                  f"{new['task_completion']:.1%}")
+        return 0
+
+    replay_ids: list[str] = []
+    replay_of = None
+    execution: dict[str, Any] = {}
+    if args.replay:
+        if args.kind or args.sample or args.limit:
+            parser.error("--replay takes its scenarios from the results file")
+        try:
+            replay_ids, config, execution = replay_plan(Path(args.replay))
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        if not replay_ids:
+            print(f"nothing failed in {args.replay}")
+            return 0
+        replay_of = Path(args.replay).stem
+        for key, value in config.items():
+            setattr(args, key, value)
+
     settings = get_settings()
-    updates: dict[str, Any] = {}
+    updates: dict[str, Any] = {"llm_seed": args.seed, **execution}
     if args.provider:
         updates["llm_provider"] = args.provider
     if args.model:
@@ -560,9 +933,17 @@ def main() -> int:
     ITERATION_CAP = args.max_iterations
     RUN_ID = datetime.now(UTC).strftime("run-%Y%m%dT%H%M%SZ")
 
-    # Remove anything a previous run left behind before measuring anything.
-    # A killed run orphans its planted evidence, which then becomes background
-    # noise for every scenario that follows - invisibly, because nothing errors.
+    # This run owns the database until it exits (see fixtures.EVAL_LOCK).
+    import contextlib
+    holding = contextlib.ExitStack()
+    try:
+        holding.enter_context(fixtures.exclusive(settings.database_url))
+    except RuntimeError as exc:
+        print(f"not starting: {exc}", file=sys.stderr)
+        return 1
+
+    # Remove what a killed run left behind before measuring anything: its planted
+    # evidence would be background noise for every scenario that follows.
     import psycopg as _pg
     with _pg.connect(settings.database_url, autocommit=True) as _c:
         purged = fixtures.purge_orphans(_c, except_run_id=RUN_ID)
@@ -570,6 +951,12 @@ def main() -> int:
         print(f"purged orphaned fixture rows from a previous run: {purged}")
 
     scenarios = load_scenarios(SCENARIO_DIR)
+    if replay_ids:
+        missing = sorted(set(replay_ids) - {s.id for s in scenarios})
+        if missing:
+            print(f"scenarios no longer in the suite: {missing}", file=sys.stderr)
+            return 1
+        scenarios = [s for s in scenarios if s.id in set(replay_ids)]
     if args.kind:
         scenarios = [s for s in scenarios if s.kind == args.kind]
     if args.sample:
@@ -593,10 +980,17 @@ def main() -> int:
     print(f"running {len(scenarios)} scenarios against {model} "
           f"({settings.llm_provider}), judge={'on' if judge_llm else 'off'}")
 
-    progress = progress_path(settings, args.kind, args.max_iterations, bool(judge_llm))
+    progress = progress_path(settings, f"replay-{replay_of}" if replay_of else args.kind,
+                             args.max_iterations, bool(judge_llm))
     completed: dict[str, ScenarioResult] = {}
+    current = progress_stamp(settings, scenarios)
     if args.resume:
         completed = load_progress(progress)
+        why = resumable(progress, current) if completed else None
+        if why:
+            print(f"\ncannot resume {progress.name}: {why}.\n"
+                  f"  delete it to start over", file=sys.stderr)
+            return 1
         if completed:
             print(f"resuming: {len(completed)} scenario(s) already done in "
                   f"{progress.name}")
@@ -611,23 +1005,24 @@ def main() -> int:
               f"  or delete it to start over", file=sys.stderr)
         return 1
 
+    if not completed:
+        progress.parent.mkdir(parents=True, exist_ok=True)
+        progress.unlink(missing_ok=True)
+        stamp_path(progress).write_text(json.dumps(current) + "\n")
     todo = [sc for sc in scenarios if sc.id not in completed]
     if completed:
         print(f"  {len(todo)} remaining of {len(scenarios)}")
 
     results: list[ScenarioResult] = list(completed.values())
     t0 = time.perf_counter()
-    for i, scenario in enumerate(todo, 1):
-        r = run_scenario(scenario, settings, judge_llm, args.max_iterations)
-        results.append(r)
-        # Write before printing: if the process dies during the next scenario,
-        # this one is already safe on disk.
-        append_progress(progress, r)
-        mark = "ok  " if r.task_success else ("ERR " if r.error else "fail")
-        print(f"  [{i:>3}/{len(todo)}] {mark} {r.scenario_id:<12} "
-              f"{r.latency_s:>6.1f}s  {r.failure_note[:58]}")
+    try:
+        results += run_all(todo, settings, judge_llm, args.max_iterations, progress)
+    except CleanupFailed as exc:
+        print(f"\nstopped: {exc}. Its results are not kept; the next run purges what it "
+              f"left, and --resume continues from {progress.name}.", file=sys.stderr)
+        return 1
 
-    summary = aggregate(results, settings)
+    summary = aggregate(results, settings, judge=judge_llm is not None)
     failures = failure_analysis(results)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     json_path, md_path = write_report(summary, results, failures, stamp)
@@ -649,6 +1044,7 @@ def main() -> int:
     print(f"\nwrote {md_path.relative_to(REPO_ROOT)}")
     if len(results) == len(scenarios):
         progress.unlink(missing_ok=True)   # suite finished; the resume file is spent
+        stamp_path(progress).unlink(missing_ok=True)
     else:
         print(f"progress kept in {progress.relative_to(REPO_ROOT)} - "
               f"re-run with --resume to continue")

@@ -13,11 +13,12 @@ from incidentiq.tools.base import (
     ToolError,
     ToolResult,
     ToolStatus,
+    argument_problems,
     execute_tool,
     registry,
 )
 
 __all__ = [
     "Tool", "ToolError", "ToolResult", "ToolStatus", "FailureMode",
-    "FailureInjector", "execute_tool", "execute_action", "registry",
+    "FailureInjector", "argument_problems", "execute_tool", "execute_action", "registry",
 ]

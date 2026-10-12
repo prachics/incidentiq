@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
-"""Compare two eval runs.
+"""Compare two eval runs, scenario by scenario.
 
     python -m evals.compare evals/results/run_A.json evals/results/run_B.json
 
-The intended use is a local model against a frontier model on the same
-scenarios, which is the reason the provider interface exists. It also works for
-before/after comparisons of a single change, which is the cheaper and more
-frequent case.
-
-Why a separate tool rather than a `--compare` flag on the harness: running two
-providers in one process means one crash loses both halves, and the results are
-only comparable if the scenario set, iteration cap and corpus all match. Reading
-two finished result files makes those preconditions checkable rather than
-assumed - and this refuses to compare runs that differ in ways that would make
-the comparison meaningless.
+Reads two finished results files (before and after a change, or two models on the
+same scenarios). Every difference that would make the comparison misleading
+(scenarios, iteration cap, seeds, execution settings, grader) is printed as a
+warning above the tables.
 """
 
 from __future__ import annotations
@@ -71,12 +64,34 @@ def _comparability(a: dict, b: dict) -> list[str]:
             f"{b.get('iteration_cap_override') or 'none'}) - a capped run understates "
             "task completion, so this comparison measures the cap as much as the model"
         )
+    if a.get("seed") != b.get("seed"):
+        warnings.append(f"different sampling seeds ({a.get('seed')} vs {b.get('seed')}) - "
+                        "some differences are sampling, not the change")
     a_judged = a.get("grounded_response_rate") is not None
     b_judged = b.get("grounded_response_rate") is not None
     if a_judged != b_judged:
         warnings.append("groundedness scored in only one run")
     if a.get("by_kind", {}).keys() != b.get("by_kind", {}).keys():
         warnings.append("different scenario kinds present")
+    if a.get("scenarios_sha256") != b.get("scenarios_sha256"):
+        warnings.append("different scenario files (or one run predates the fingerprint)")
+    exec_a, exec_b = a.get("execution"), b.get("execution")
+    if exec_a is None or exec_b is None:
+        if exec_a is not exec_b:
+            warnings.append("only one run records its execution settings")
+    elif exec_a != exec_b:
+        differ = sorted(k for k in exec_a.keys() | exec_b.keys() if exec_a.get(k) != exec_b.get(k))
+        warnings.append(f"different execution settings ({', '.join(differ)}) - failure "
+                        "injection, retries or the control plane differ")
+    grader_a = a.get("regraded_with") or a.get("revision")
+    grader_b = b.get("regraded_with") or b.get("revision")
+    if grader_a != grader_b:
+        warnings.append(f"graded by different revisions ({grader_a} vs {grader_b})")
+    ids_a, ids_b = a.get("scenario_ids"), b.get("scenario_ids")
+    if ids_a is not None and ids_b is not None and set(ids_a) != set(ids_b):
+        only_a, only_b = sorted(set(ids_a) - set(ids_b)), sorted(set(ids_b) - set(ids_a))
+        warnings.append(f"different scenarios (only in A: {', '.join(only_a) or 'none'}; "
+                        f"only in B: {', '.join(only_b) or 'none'})")
     return warnings
 
 
@@ -135,6 +150,30 @@ def render_failures(fa: dict, fb: dict, label_a: str, label_b: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_scenarios(ra: list[dict], rb: list[dict], label_a: str, label_b: str) -> str:
+    """Scenarios in both runs whose outcome or failure changed. A replay reruns
+    only a run's failures, so this is the table that says what a fix did."""
+    before = {r["scenario_id"]: r for r in ra}
+    rows = []
+    for r in rb:
+        old = before.get(r["scenario_id"])
+        if old is None:
+            continue
+        note_a, note_b = old.get("failure_note") or "", r.get("failure_note") or ""
+        if old["task_success"] != r["task_success"] or note_a != note_b:
+            rows.append(f"| {r['scenario_id']} | {_outcome(old)} | {_outcome(r)} |")
+    if not rows:
+        return ""
+    return "\n".join(["", "## Scenarios that changed", "",
+                      f"| Scenario | {label_a} | {label_b} |", "|---|---|---|", *rows]) + "\n"
+
+
+def _outcome(r: dict) -> str:
+    if r["task_success"]:
+        return "pass"
+    return f"fail: {(r.get('failure_note') or '').split('(')[0].strip()[:70]}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_a")
@@ -151,9 +190,16 @@ def main() -> int:
         print(f"no such results file: {exc.filename}", file=sys.stderr)
         return 1
 
-    md = render(a["summary"], b["summary"], args.label_a, args.label_b)
+    # Which scenarios each run saw, beside its summary, so a different set is caught
+    # even when the counts and kinds agree.
+    summaries = [{**run["summary"], "scenario_ids": [r["scenario_id"]
+                                                      for r in run.get("results", [])]}
+                 for run in (a, b)]
+    md = render(*summaries, args.label_a, args.label_b)
     md += render_failures(a.get("failure_analysis", {}), b.get("failure_analysis", {}),
                           args.label_a, args.label_b)
+    md += render_scenarios(a.get("results", []), b.get("results", []),
+                           args.label_a, args.label_b)
     print(md)
     if args.out:
         Path(args.out).write_text(md)

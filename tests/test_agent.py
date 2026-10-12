@@ -603,11 +603,12 @@ class TestProposeGuards:
     out-of-range confidence, or a citation to a document never retrieved."""
 
     @staticmethod
-    def _run(script_text, docs=None):
+    def _run(script_text, docs=None, tool_calls=None, conn=None):
         from incidentiq.agent.nodes import NodeContext, propose
 
-        ctx = NodeContext(conn=None, llm=StubProvider(script=[LLMResponse(text=script_text)]))
+        ctx = NodeContext(conn=conn, llm=StubProvider(script=[LLMResponse(text=script_text)]))
         state = initial_state("IQ-1", "q")
+        state["tool_calls"] = tool_calls or []
         state["retrieved_docs"] = docs or [
             {"parent_doc_id": "INC-00315", "doc_type": "incident", "title": "t",
              "service": "order-service", "excerpt": "e", "rrf_score": 0.1,
@@ -624,11 +625,28 @@ class TestProposeGuards:
         assert p["remediation_tool"] is None
         assert p["requires_approval"] is False
 
-    def test_write_tool_is_accepted(self):
-        p = self._run('{"root_cause": "deadlock", "remediation_tool": "restart_service", '
-                      '"confidence": 0.8, "evidence_citations": []}')
+    ERRORS = [{"tool_name": "get_service_logs", "status": "success", "attempt": 1,
+               "arguments": {"service": "order-service", "level": "ERROR"},
+               "result": {"sample_lines": [{"level": "ERROR", "message": "deadlock detected"}]}}]
+    RESTART = ('{"root_cause": "deadlock", "remediation_tool": "restart_service", '
+               '"remediation_arguments": {"service": "order-service", "reason": "deadlock"}, '
+               '"confidence": 0.8, "evidence_citations": []}')
+
+    def test_write_tool_is_accepted(self, conn):
+        p = self._run(self.RESTART, tool_calls=self.ERRORS, conn=conn)
         assert p["remediation_tool"] == "restart_service"
         assert p["requires_approval"] is True
+
+    def test_no_action_on_a_service_not_seen_failing(self, conn):
+        """Observed: no error logs, a similar past incident retrieved, and that
+        incident's fix proposed anyway. Without current evidence on the target
+        service, the proposal becomes an abstention that says why."""
+        quiet = [{**self.ERRORS[0], "result": {"sample_lines": []}}]
+        other = [{**self.ERRORS[0], "arguments": {"service": "payment-service"}}]
+        for calls in ([], quiet, other):
+            p = self._run(self.RESTART, tool_calls=calls, conn=conn)
+            assert p["abstained"] and p["remediation_tool"] is None
+            assert "no current evidence of a problem on order-service" in p["abstention_reason"]
 
     def test_hallucinated_tool_is_dropped(self):
         p = self._run('{"root_cause": "x", "remediation_tool": "reboot_the_datacenter", '

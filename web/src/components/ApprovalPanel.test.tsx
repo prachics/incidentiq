@@ -104,6 +104,19 @@ describe("ApprovalPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("already approved by alice");
   });
 
+  it("offers only an edit when the proposed arguments cannot execute", () => {
+    render(
+      <ApprovalPanel
+        approval={{ ...approval, argument_problems: ["'v1.6.9' was never deployed to checkout-service"] }}
+        role="approver"
+        onDecide={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/never deployed/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit and approve" })).toBeInTheDocument();
+  });
+
   it("shows a decision once made", () => {
     render(
       <ApprovalPanel

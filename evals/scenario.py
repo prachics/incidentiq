@@ -4,10 +4,10 @@ A scenario is a YAML file describing one investigation with a known answer:
 the query, the expected root cause, the tool calls that ought to be made
 (order-independent), and the remediations that count as correct.
 
-Grading is deliberately structural rather than free-text comparison. "Did the
-agent reach an acceptable remediation" is answerable from the proposal object;
-"is this prose equivalent to that prose" is not, and pretending otherwise is
-how eval suites end up measuring phrasing.
+The grade comes from facts about the run (the action proposed, whether the agent
+abstained) and from what the agent's conclusion asserts: the service at fault named
+as failing, and the scenario's failure mode in its stated root cause, read by the
+phrasings in evals/mechanism.py rather than by likeness to a reference answer.
 """
 
 from __future__ import annotations
@@ -32,8 +32,10 @@ class Scenario:
     expected_service: str | None = None
     expected_archetype: str | None = None
     expected_root_cause: str = ""
-    # Keywords that must appear in the stated root cause. Cheap, robust, and
-    # honest about what it measures: topical correctness, not phrasing.
+    # For a scenario with an archetype, its words, reported beside the grade as how
+    # many an answer used (the grade reads the archetype's assertion phrasings: see
+    # evals/mechanism.py). For one without, the grade itself: at least two of them
+    # (or all, if fewer) in the stated root cause.
     root_cause_keywords: list[str] = field(default_factory=list)
     # Tools that ought to be called. Order-independent: several diagnostic
     # sequences are legitimate and grading on order would penalise good ones.
@@ -53,7 +55,8 @@ class Scenario:
     inject_failures: bool = False
     failure_rate: float = 0.0
     max_iterations: int = 8
-    approval_decision: Literal["approve", "reject", "modify"] | None = None
+    # "modify": approve with edited arguments, which are what must then run.
+    approval_decision: Literal["approve", "modify", "reject"] | None = None
 
     notes: str = ""
 
