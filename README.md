@@ -14,7 +14,12 @@ produces real numbers, including bad ones.**
 
 **Status:** Phases 1–6 complete and measured: the agent, its evaluation, an approval API, a web UI, and tracing.
 Every number below comes from the harness in this repository and can be
-reproduced with the commands given.
+reproduced with the commands given. CI runs the backend tests against Postgres with
+pgvector, and the web app's typecheck, tests and build, on every push.
+
+![An investigation in the web UI on a local 14B model, sped up: payment-service hangs;
+the agent reads payment-service's and payment-db's logs and payment-db's disk metric,
+and concludes payment-db is running out of disk space](docs/demo.gif)
 
 ---
 
@@ -412,7 +417,8 @@ is more often a broken expectation than a broken model.
 
 ## Testing
 
-315 backend tests and 22 frontend tests. Beyond the usual unit coverage, four areas are tested specifically:
+672 backend tests (the API, the agent and the evaluation harness) and 23 frontend tests.
+Beyond the usual unit coverage, four areas are tested specifically:
 
 - **State recovery.** A test kills a run mid-investigation, constructs a
   completely fresh runner sharing nothing but the database, resumes it, and
@@ -441,7 +447,10 @@ pytest -q              # backend
 cd web && npm test     # frontend
 ```
 
-Tests that need Postgres skip cleanly when it is unavailable.
+Tests that need Postgres skip cleanly when it is unavailable; `INCIDENTIQ_REQUIRE_DB=1`
+makes that a failure. CI (`.github/workflows/ci.yml`) sets it, migrates, seeds and
+indexes a fresh database (CPU-only torch for the embeddings), then runs ruff and the
+backend tests; a second job typechecks, tests and builds the web app.
 
 ---
 

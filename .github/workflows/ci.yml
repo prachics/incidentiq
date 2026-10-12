@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: incidentiq
+          POSTGRES_PASSWORD: incidentiq_dev_password
+          POSTGRES_DB: incidentiq
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U incidentiq -d incidentiq" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://incidentiq:incidentiq_dev_password@localhost:5432/incidentiq
+      LLM_PROVIDER: stub
+      # The database tests must run here, not be skipped.
+      INCIDENTIQ_REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # The CPU build of torch: the default wheel brings CUDA, gigabytes CI never uses.
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: python scripts/migrate.py
+      - run: python seeds/generate.py
+      - run: python -m incidentiq.rag.indexer
+      - run: pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
