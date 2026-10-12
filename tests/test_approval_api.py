@@ -472,6 +472,132 @@ def test_a_failed_audit_write_rolls_the_decision_back(conn, keys):
     assert recorder.resumed == []
 
 
+# ── Session and live updates ────────────────────────────────
+def test_me_reports_the_role(keys):
+    client = TestClient(app)
+    assert client.get("/me", headers=VIEWER).json() == {"user": "vera", "role": "viewer"}
+    assert client.get("/me", headers=APPROVER).json()["role"] == "approver"
+    assert client.get("/me").status_code == 401
+
+
+def test_the_stream_needs_a_key_and_a_real_id(keys):
+    client = TestClient(app)
+    assert client.get("/investigations/IQ-NOPE/stream").status_code == 401
+    assert client.get("/investigations/IQ-NOPE/stream", headers=VIEWER).status_code == 404
+
+
+class PausingStub(StubProvider):
+    """The scripted run, blocked inside its Nth model call until released."""
+
+    def __init__(self, pause_at: int):
+        super().__init__(script=scripted_run())
+        self.pause_at, self.calls_made = pause_at, 0
+        self.reached, self.release = threading.Event(), threading.Event()
+
+    def complete_json(self, *args, **kwargs):
+        self.calls_made += 1
+        if self.calls_made == self.pause_at:
+            self.reached.set()
+            self.release.wait(30)
+        return super().complete_json(*args, **kwargs)
+
+
+def test_progress_is_visible_while_the_run_is_in_flight(conn):
+    """Read from another connection while the run is blocked in `reflect` (the
+    third model call): the steps so far must already be in the table."""
+    stub = PausingStub(pause_at=3)
+    iid = f"IQ-LIVE-{uuid.uuid4().hex[:8]}"
+    done = threading.Event()
+
+    def run():
+        with InvestigationRunner(llm=stub) as runner:
+            runner.start(iid, "checkout-service is timing out under load")
+        done.set()
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    try:
+        assert stub.reached.wait(120)
+        status, events, proposal = conn.execute(
+            "SELECT status, events, proposal FROM investigations WHERE id = %s", (iid,)).fetchone()
+        nodes = [e["node"] for e in events]
+        assert status == "running"
+        assert nodes[:4] == ["intake", "retrieve", "plan", "execute_tool"]
+        assert "reflect" not in nodes and proposal is None
+    finally:
+        stub.release.set()
+        thread.join(60)
+    assert done.is_set()
+    events, proposal = conn.execute("SELECT events, proposal FROM investigations WHERE id = %s",
+                                    (iid,)).fetchone()
+    assert "await_approval" in [e["node"] for e in events]
+    assert proposal["remediation_tool"] == "scale_service"
+
+
+@pytest.fixture
+def live_server():
+    """The app under a real uvicorn server. TestClient buffers a streaming
+    response until it ends, so it cannot show a stream arriving piece by piece."""
+    import socket
+
+    import uvicorn
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
+                                           log_level="warning", lifespan="off"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        threading.Event().wait(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(10)
+
+
+def test_the_stream_shows_a_run_in_flight_then_its_end(conn, keys, live_server):
+    """The first snapshot arrives while the run is blocked mid-way; releasing it
+    produces later snapshots and finally `end` with the settled status."""
+    import httpx
+
+    stub = PausingStub(pause_at=3)
+    worker = Worker(lambda: InvestigationRunner(llm=stub))
+    app.state.worker = worker
+    iid = f"IQ-SSE-{uuid.uuid4().hex[:8]}"
+    received: list[tuple[str, str]] = []
+    try:
+        httpx.post(f"{live_server}/investigations", headers=VIEWER, timeout=10,
+                   json={"query": "checkout-service is timing out under load", "incident_id": iid})
+        assert stub.reached.wait(120)
+        with httpx.stream("GET", f"{live_server}/investigations/{iid}/stream",
+                          headers=VIEWER, timeout=60) as r:
+            event = None
+            for line in r.iter_lines():
+                if line.startswith("event:"):
+                    event = line.split(":", 1)[1].strip()
+                elif line.startswith("data:") and event:
+                    received.append((event, line.split(":", 1)[1].strip()))
+                    if len(received) == 1:
+                        first = json.loads(received[0][1])
+                        nodes = [e["node"] for e in first["events"]]
+                        assert first["status"] == "running"
+                        assert nodes[:3] == ["intake", "retrieve", "plan"]   # progress so far
+                        assert "reflect" not in nodes                        # and no further
+                        stub.release.set()   # only now let the run continue
+    finally:
+        stub.release.set()
+        worker.drain(60)
+        app.state.worker = None
+
+    snapshots = [json.loads(data) for event, data in received if event == "snapshot"]
+    assert len(snapshots) >= 2
+    assert snapshots[-1]["status"] == "awaiting_approval"
+    assert received[-1] == ("end", "awaiting_approval")
+
+
 def test_a_decision_made_while_its_job_is_still_finishing_is_not_lost(conn, keys):
     """The approval is visible before the job that created it has returned. A
     decision in that window used to be stored but never resumed."""
@@ -782,6 +908,6 @@ def test_settling_fails_visibly_when_a_resume_makes_no_progress(conn):
         conn.execute("UPDATE approvals SET decision = 'approved' WHERE id = %s",
                      (state["pending_approval"]["approval_id"],))
         config = {"configurable": {"thread_id": iid}}
-        runner.graph.invoke = lambda *_a, **_k: runner.graph.get_state(config).values
+        runner._advance = lambda *_a, **_k: runner.graph.get_state(config).values
         with pytest.raises(RuntimeError, match="no progress"):
             runner._settle(iid, state)

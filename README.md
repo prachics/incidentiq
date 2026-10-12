@@ -12,7 +12,7 @@ is persisted and survives process death**, **write actions are gated
 structurally rather than by prompt**, and **there is an evaluation harness that
 produces real numbers, including bad ones.**
 
-**Status:** Phases 1–4 complete and measured. Phase 5 (frontend) next.
+**Status:** Phases 1–5 complete and measured: the agent, its evaluation, an approval API and a web UI.
 Every number below comes from the harness in this repository and can be
 reproduced with the commands given.
 
@@ -183,7 +183,8 @@ graph TB
     end
 
     API[API — FastAPI<br/>API keys · viewer / approver]
-    HUMAN([Approver]) -->|POST decision| API
+    UI[Web UI — React + TypeScript] -->|REST + server-sent events| API
+    HUMAN([Approver]) -->|decides in| UI
     CP[Mock control plane<br/>Idempotency-Key ledger]
 
     API -->|start / resume| N1
@@ -260,11 +261,42 @@ curl localhost:8000/investigations/IQ-…/audit -H "$V"    # append-only decisio
 |---|---|---|
 | `POST /investigations` | viewer | 202; `incident_id` optional; 409 if it exists |
 | `GET /investigations`, `/{id}`, `/{id}/tool-calls`, `/{id}/audit` | viewer | filter the list with `?status=` |
+| `GET /investigations/{id}/stream` | viewer | server-sent events: the investigation is read once a second and sent as a `snapshot` when it changed; `end` when it settles |
+| `GET /me` | viewer | the user and role behind the key |
 | `POST /investigations/{id}/resume` | approver | recovery after a crash, or retry of a failed action; 409 while an approval is pending or a job is running |
 | `GET /approvals`, `/approvals/{id}` | viewer | `?status=pending\|decided\|all` |
 | `POST /approvals/{id}/decision` | approver | exactly one decision: concurrent attempts get 409; edited arguments validated (422); a rejection needs a reason |
 
 Interactive docs at `localhost:8000/docs`.
+
+---
+
+## Web UI
+
+React 18 + TypeScript (strict), TanStack Query and Tailwind, in `web/`. The API
+serves the built app at `/app`; the Docker image builds it in a Node stage.
+
+```bash
+cd web && npm ci
+npm run dev        # http://localhost:5173/app/ - proxies API calls to localhost:8000
+npm run build      # then the API serves it at http://localhost:8000/app/
+npm test           # Vitest + Testing Library
+```
+
+- **Investigations:** start one from a report, see each run's status at a glance.
+- **Timeline:** every node the agent ran, in order, with durations, retries and failures, updated live.
+- **Approval panel:** approve, approve with edited arguments (a form generated from the tool's JSON
+  Schema, validated before it is sent), or reject with the reason the agent will revise from. Viewers
+  see the request but cannot decide; a decision another approver made first shows who and when.
+- **Evidence:** the proposal's root cause and remediation, each tool call with its status, latency
+  and retries, and each retrieved document with its rank in vector and keyword search.
+- **Audit log:** the append-only record of who did what.
+
+Live updates come from `GET /investigations/{id}/stream`, which samples the investigation once a
+second. Browsers' `EventSource` cannot send an `Authorization` header, so the UI reads the stream with
+`fetch` and a small SSE parser, and polls instead if the stream fails or closes before its `end` event.
+While an approval waits, the page polls slowly so a decision made in another browser shows up. The API
+key lives in `sessionStorage`, not `localStorage`.
 
 ---
 
@@ -358,7 +390,7 @@ is more often a broken expectation than a broken model.
 | 2 | Chunking, embeddings, hybrid search, metadata filtering, Recall@5 | **complete** |
 | 3 | LangGraph agent, state persistence, tools, retry logic, evaluation harness | **complete** |
 | 4 | Approval API, audit trail, API keys, actions executed exactly once via a mock control plane | **complete** |
-| 5 | Frontend: investigation, evidence, approval, trace views | next |
+| 5 | Web UI: investigations, live timeline, evidence, approvals, audit log | **complete** |
 | 6 | MCP server exposing the diagnostic tools | not started |
 
 Langfuse is provisioned in Docker Compose and configured in settings, but the
@@ -370,7 +402,7 @@ counts and retry counts are recorded in the investigation state and in the
 
 ## Testing
 
-294 tests. Beyond the usual unit coverage, four areas are tested specifically:
+300 backend tests and 22 frontend tests. Beyond the usual unit coverage, four areas are tested specifically:
 
 - **State recovery.** A test kills a run mid-investigation, constructs a
   completely fresh runner sharing nothing but the database, resumes it, and
@@ -395,7 +427,8 @@ counts and retry counts are recorded in the investigation state and in the
   rather than crashing on it.
 
 ```bash
-pytest -q
+pytest -q              # backend
+cd web && npm test     # frontend
 ```
 
 Tests that need Postgres skip cleanly when it is unavailable.
@@ -424,7 +457,7 @@ Tests that need Postgres skip cleanly when it is unavailable.
 | LLM | Swappable: Ollama (local, default), Anthropic, deterministic stub |
 | Packaging | Docker Compose |
 | Tracing | Langfuse (provisioned; instrumentation pending) |
-| Frontend | React + TypeScript + Vite (planned, Phase 5) |
+| Frontend | React 18, TypeScript (strict), Vite, TanStack Query, Tailwind, Vitest |
 
 ---
 

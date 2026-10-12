@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import psycopg
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from incidentiq.api import approvals, investigations
-from incidentiq.api.auth import parse_api_keys
+from incidentiq.api.auth import Viewer, parse_api_keys
 from incidentiq.api.worker import Worker
 from incidentiq.config import get_settings
 
@@ -52,6 +55,40 @@ app = FastAPI(
 )
 app.include_router(investigations.router)
 app.include_router(approvals.router)
+
+
+@app.get("/me", tags=["session"])
+def me(who: Viewer) -> dict[str, str]:
+    """Who the key belongs to. The UI uses the role to show or hide decisions."""
+    return {"user": who.user, "role": who.role}
+
+
+def mount_ui(target: FastAPI, dist: Path) -> bool:
+    """Serve the built web UI under /app when it exists. Returns whether it did.
+
+    Under /app rather than / because UI routes like /investigations/IQ-1 would
+    otherwise collide with the API's own paths. Every /app path returns the
+    single-page app's index; the browser router takes it from there.
+    """
+    index = dist / "index.html"
+    if not index.is_file():
+        return False
+    target.mount("/app/assets", StaticFiles(directory=dist / "assets"), name="ui-assets")
+
+    @target.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse("/app/")
+
+    @target.get("/app", include_in_schema=False)
+    @target.get("/app/{_path:path}", include_in_schema=False)
+    def ui(_path: str = "") -> FileResponse:
+        return FileResponse(index)
+
+    return True
+
+
+mount_ui(app, Path(get_settings().ui_dist) if get_settings().ui_dist
+         else Path(__file__).resolve().parents[3] / "web" / "dist")
 
 
 def _connect() -> psycopg.Connection:

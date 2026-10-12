@@ -3,8 +3,9 @@
 __pycache__/
 *.pyc
 node_modules/
-frontend/dist/
 evals/results/
 docs/
 tests/
 .env
+web/node_modules
+web/dist

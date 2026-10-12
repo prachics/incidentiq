@@ -1,22 +1,29 @@
-"""Investigation endpoints: start, inspect, and resume after a crash."""
+"""Investigation endpoints: start, inspect, follow live, and resume after a crash."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
 from incidentiq.api.auth import Approver, Viewer
 from incidentiq.api.deps import DB, Jobs
+from incidentiq.config import get_settings
 
 router = APIRouter(prefix="/investigations", tags=["investigations"])
 
 Status = Literal["queued", "running", "awaiting_approval", "complete", "failed"]
+# A stream ends at any status that waits for a person, or for nothing.
+SETTLED = {"awaiting_approval", "complete", "failed"}
+STREAM_POLL_S = 1.0
 
 
 class StartIn(BaseModel):
@@ -71,23 +78,42 @@ def list_investigations(
 
 @router.get("/{investigation_id}")
 def get_investigation(investigation_id: str, conn: DB, _: Viewer) -> dict[str, Any]:
-    inv = _require(conn, investigation_id)
-    inv["approvals"] = conn.execute(
-        "SELECT id, proposed_tool, proposed_arguments, decision, decided_by, decided_at, "
-        "rejection_reason, modified_arguments, created_at FROM approvals "
-        "WHERE investigation_id = %s ORDER BY created_at",
-        (investigation_id,),
-    ).fetchall()
-    inv["actions"] = conn.execute(
-        "SELECT approval_id, tool_name, arguments, outcome, attempts, result, error, "
-        "executed_at FROM actions WHERE investigation_id = %s ORDER BY id",
-        (investigation_id,),
-    ).fetchall()
-    inv["tool_call_count"] = conn.execute(
-        "SELECT count(*) AS n FROM tool_calls WHERE investigation_id = %s",
-        (investigation_id,),
-    ).fetchone()["n"]
-    return inv
+    return _detail(conn, investigation_id)
+
+
+@router.get("/{investigation_id}/stream")
+async def stream(investigation_id: str, request: Request, _: Viewer) -> EventSourceResponse:
+    """Server-sent events: a `snapshot` whenever the investigation changes, then
+    `end` once it settles.
+
+    The runner mirrors state after every node, so this reads the database once
+    a second instead of holding a line to the worker. The API key travels in a
+    header, which the browser's EventSource cannot send, so the UI reads this
+    stream with fetch.
+    """
+    def read() -> dict[str, Any]:
+        with psycopg.connect(get_settings().database_url, autocommit=True,
+                             row_factory=dict_row) as conn:
+            return _detail(conn, investigation_id)
+
+    current = await asyncio.to_thread(read)   # an unknown id is a plain 404 here
+
+    async def events():
+        nonlocal current
+        last = None
+        while not await request.is_disconnected():
+            marker = (current["updated_at"], current["status"], current["tool_call_count"],
+                      len(current["approvals"]))
+            if marker != last:
+                yield {"event": "snapshot", "data": json.dumps(current, default=str)}
+                last = marker
+            if current["status"] in SETTLED:
+                yield {"event": "end", "data": current["status"]}
+                return
+            await asyncio.sleep(STREAM_POLL_S)
+            current = await asyncio.to_thread(read)
+
+    return EventSourceResponse(events(), ping=15)
 
 
 @router.get("/{investigation_id}/tool-calls")
@@ -153,13 +179,40 @@ def resume(investigation_id: str, conn: DB, who: Approver, jobs: Jobs) -> dict[s
 
 def _require(conn: psycopg.Connection, investigation_id: str) -> dict[str, Any]:
     row = conn.execute(
-        "SELECT id, user_query, status, entities, iteration, final_summary, failure_reason, "
-        "created_at, updated_at FROM investigations WHERE id = %s",
+        "SELECT id, user_query, status FROM investigations WHERE id = %s",
         (investigation_id,),
     ).fetchone()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no investigation {investigation_id!r}")
     return row
+
+
+def _detail(conn: psycopg.Connection, investigation_id: str) -> dict[str, Any]:
+    """Everything the investigation page shows, in one read."""
+    inv = conn.execute(
+        "SELECT id, user_query, status, entities, iteration, final_summary, failure_reason, "
+        "scratchpad, retrieved_docs, events, proposal, created_at, updated_at "
+        "FROM investigations WHERE id = %s",
+        (investigation_id,),
+    ).fetchone()
+    if inv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no investigation {investigation_id!r}")
+    inv["approvals"] = conn.execute(
+        "SELECT id, proposed_tool, proposed_arguments, reasoning, decision, decided_by, "
+        "decided_at, rejection_reason, modified_arguments, created_at FROM approvals "
+        "WHERE investigation_id = %s ORDER BY created_at",
+        (investigation_id,),
+    ).fetchall()
+    inv["actions"] = conn.execute(
+        "SELECT approval_id, tool_name, arguments, outcome, attempts, result, error, "
+        "executed_at FROM actions WHERE investigation_id = %s ORDER BY id",
+        (investigation_id,),
+    ).fetchall()
+    inv["tool_call_count"] = conn.execute(
+        "SELECT count(*) AS n FROM tool_calls WHERE investigation_id = %s",
+        (investigation_id,),
+    ).fetchone()["n"]
+    return inv
 
 
 def _has_checkpoints(conn: psycopg.Connection, investigation_id: str) -> bool:

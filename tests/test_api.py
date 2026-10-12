@@ -78,3 +78,35 @@ def test_stats_reports_the_corpus(client):
     body = r.json()
     assert body["services"] == 33
     assert body["incidents"] == 500
+
+
+
+def test_the_ui_is_served_under_app_with_a_fallback_to_its_index(tmp_path):
+    """Deep links like /app/investigations/IQ-1 must load the single-page app,
+    and must not shadow the API's own /investigations routes."""
+    from fastapi import FastAPI
+    from incidentiq.api.main import mount_ui
+
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<div id=root></div>")
+    (tmp_path / "assets" / "app.js").write_text("console.log(1)")
+    ui_app = FastAPI()
+
+    @ui_app.get("/investigations/{iid}")
+    def api_route(iid: str):
+        return {"api": iid}
+
+    assert mount_ui(ui_app, tmp_path)
+    client = TestClient(ui_app)
+    assert client.get("/app/investigations/IQ-1").text == "<div id=root></div>"
+    assert client.get("/app/assets/app.js").text == "console.log(1)"
+    assert client.get("/investigations/IQ-1").json() == {"api": "IQ-1"}
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (302, 307) and r.headers["location"] == "/app/"
+
+
+def test_no_ui_is_mounted_without_a_build(tmp_path):
+    from fastapi import FastAPI
+    from incidentiq.api.main import mount_ui
+
+    assert mount_ui(FastAPI(), tmp_path) is False

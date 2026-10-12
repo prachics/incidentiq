@@ -1,5 +1,13 @@
 # Build context is the repository root (see docker-compose.yml): pyproject.toml
-# lives there and the package lives under api/.
+# lives there, the package under api/, the web UI under web/.
+
+FROM node:22-slim AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
@@ -23,6 +31,8 @@ WORKDIR /app
 
 COPY --from=builder /install /usr/local
 COPY api/incidentiq ./incidentiq
+COPY --from=web /web/dist ./web/dist
+ENV UI_DIST=/app/web/dist
 
 # Cached in the model_cache volume so the embedding model downloads once.
 ENV HF_HOME=/root/.cache/huggingface

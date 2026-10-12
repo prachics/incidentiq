@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # Comma-separated `key:user:role`, where role is `viewer` or `approver`.
     api_keys: str = ""
+    # Built web UI to serve under /app. Empty means web/dist in a source checkout.
+    ui_dist: str = ""
 
     @field_validator("failure_injection_rate", "control_plane_fault_rate")
     @classmethod

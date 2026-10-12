@@ -3,7 +3,7 @@
 `build_graph` wires the nine nodes; the graph interrupts before `act`, so every
 write action waits for a decision with a checkpoint written. `InvestigationRunner`
 starts and resumes runs and mirrors the checkpoint into IncidentIQ's own tables
-when a run stops. Why a graph rather than a loop: docs/DESIGN.md.
+after every node. Why a graph rather than a loop: docs/DESIGN.md.
 """
 
 from __future__ import annotations
@@ -182,7 +182,7 @@ class InvestigationRunner:
         state = initial_state(incident_id, user_query, self.settings.max_iterations)
         self._persist_start(state)
         config = {"configurable": {"thread_id": incident_id}}
-        return self._settle(incident_id, self.graph.invoke(state, config))
+        return self._settle(incident_id, self._advance(config, state))
 
     def reset(self, incident_id: str) -> None:
         """Discard all checkpoints and derived rows for an investigation."""
@@ -212,7 +212,19 @@ class InvestigationRunner:
             "UPDATE investigations SET status = 'running', updated_at = now() WHERE id = %s",
             (incident_id,),
         )
-        return self._settle(incident_id, self.graph.invoke(None, config))
+        return self._settle(incident_id, self._advance(config, None))
+
+    def _advance(self, config: dict[str, Any],
+                 payload: InvestigationState | None) -> InvestigationState:
+        """Run until completion or the next interrupt, mirroring after every node.
+
+        Streaming node by node instead of a single invoke is what lets the API
+        and the UI show an investigation while it runs. The end state is the
+        same: `stream` stops at the same interrupt `invoke` does.
+        """
+        for _update in self.graph.stream(payload, config, stream_mode="updates"):
+            self._persist(self.graph.get_state(config).values)
+        return self.graph.get_state(config).values
 
     def resume_for_decision(self, incident_id: str, approval_id: str) -> InvestigationState:
         """Resume because `approval_id` was decided - unless the run already
@@ -249,7 +261,7 @@ class InvestigationRunner:
                 self.next_node(incident_id) == ("act",) and self._decided(final):
             self._persist(final)
             before = self._checkpoint_id(config)
-            final = self.graph.invoke(None, config)
+            final = self._advance(config, None)
             if self._checkpoint_id(config) == before:
                 # The graph stopped at the same interrupt without running `act`
                 # (for example a checkpoint written by an incompatible version).
@@ -301,7 +313,7 @@ class InvestigationRunner:
         self.conn.execute(
             "UPDATE investigations SET status = %s, entities = %s, scratchpad = %s, "
             "iteration = %s, retrieved_docs = %s, final_summary = %s, failure_reason = %s, "
-            "updated_at = now() WHERE id = %s",
+            "events = %s, proposal = %s, updated_at = now() WHERE id = %s",
             (
                 state.get("status", "running"),
                 json.dumps(state.get("entities") or {}, default=str),
@@ -310,6 +322,8 @@ class InvestigationRunner:
                 json.dumps(state.get("retrieved_docs") or [], default=str),
                 state.get("final_summary") or None,
                 state.get("failure_reason"),
+                json.dumps(state.get("events") or [], default=str),
+                json.dumps(state.get("proposal"), default=str) if state.get("proposal") else None,
                 state["incident_id"],
             ),
         )
