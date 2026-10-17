@@ -515,3 +515,28 @@ in the evaluation harness.
 **Reversal.** Point `OTEL_EXPORTER_OTLP_ENDPOINT` at any OTLP backend, Langfuse
 included.
 
+---
+
+## 22. The MCP server exposes only the read-only tools
+
+**Date:** Phase 7
+
+**Decision.** `python -m incidentiq.mcp_server` serves the diagnostic tools over
+MCP. Tools with `requires_approval` are neither listed nor callable, and every
+call runs on a connection with `default_transaction_read_only=on`.
+
+**Why.** A write tool in IncidentIQ is safe because of the path around it: a
+proposal, a person's approval, one execution through the control plane, an audit
+record. An MCP client calling `restart_service` directly would skip all of it.
+Filtering on `requires_approval` means a write tool added later is excluded by the
+same flag that already sends it to approval; the read-only session means a
+"diagnostic" tool that writes by mistake fails in Postgres instead of succeeding
+quietly. Failure injection is off because it exists to test the agent's recovery,
+not to hand a person wrong answers.
+
+**Cost.** An MCP client can diagnose but not remediate; to act, it has to go
+through the approval API like everyone else.
+
+**Reversal.** Exposing writes would mean an MCP tool that *proposes* an action
+into the approval queue, not one that executes it.
+

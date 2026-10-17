@@ -319,6 +319,57 @@ timed too), tool attempts by tool and status, tokens per model, approved actions
 by outcome (executed, already executed, failed, invalid arguments) with the
 attempts each took, and approval decisions.
 
+## MCP server
+
+The five read-only diagnostic tools - `get_service_logs`, `get_metrics`,
+`get_recent_deploys`, `get_service_dependencies` and `search_similar_incidents` -
+are also an MCP server, so any MCP client can investigate with them against the
+same seeded data. The write tools (`restart_service`, `scale_service`,
+`rollback_deploy`) are not exposed: they run only after a person approves them
+through the API. Two guards keep them out: the server lists and accepts only tools
+without `requires_approval`, and every call runs on a read-only database session,
+so a tool that tried to write would be refused by Postgres. Failure injection is
+off for MCP calls.
+
+```bash
+python -m incidentiq.mcp_server    # stdio; an MCP client starts it, you don't run it by hand
+```
+
+Claude Code, from the repository root:
+
+```bash
+claude mcp add incidentiq -e DATABASE_URL=postgresql://incidentiq:incidentiq_dev_password@localhost:5432/incidentiq \
+  -- "$PWD/.venv/bin/python" -m incidentiq.mcp_server
+```
+
+Claude Desktop or any client configured with JSON (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "incidentiq": {
+      "command": "/absolute/path/to/incidentiq/.venv/bin/python",
+      "args": ["-m", "incidentiq.mcp_server"],
+      "env": {
+        "DATABASE_URL": "postgresql://incidentiq:incidentiq_dev_password@localhost:5432/incidentiq"
+      }
+    }
+  }
+}
+```
+
+The client starts the server in its own working directory, where `.env` is not
+found, so `DATABASE_URL` is passed explicitly. If the corpus was indexed with a
+non-default embedding model, pass `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL` and
+`EMBEDDING_DIM` too: the search embeds queries with whatever model is configured. To try the tools without a client,
+the MCP Inspector opens a browser UI:
+
+```bash
+npx @modelcontextprotocol/inspector .venv/bin/python -m incidentiq.mcp_server
+```
+
+---
+
 ## Seeded data
 
 The corpus is synthetic but not random. Every incident is one of **16 failure
@@ -411,13 +462,13 @@ is more often a broken expectation than a broken model.
 | 4 | Approval API, audit trail, API keys, actions executed exactly once via a mock control plane | **complete** |
 | 5 | Web UI: investigations, live timeline, evidence, approvals, audit log | **complete** |
 | 6 | Tracing and metrics: OpenTelemetry traces across threads and HTTP, linked per investigation; Prometheus | **complete** |
-| 7 | MCP server exposing the diagnostic tools | not started |
+| 7 | MCP server exposing the read-only diagnostic tools (write tools stay behind approval) | **complete** |
 
 ---
 
 ## Testing
 
-672 backend tests (the API, the agent and the evaluation harness) and 23 frontend tests.
+687 backend tests (the API, the agent, the MCP server and the evaluation harness) and 23 frontend tests.
 Beyond the usual unit coverage, four areas are tested specifically:
 
 - **State recovery.** A test kills a run mid-investigation, constructs a
@@ -476,6 +527,7 @@ backend tests; a second job typechecks, tests and builds the web app.
 | LLM | Swappable: Ollama (local, default), Anthropic, deterministic stub |
 | Packaging | Docker Compose |
 | Observability | OpenTelemetry (OTLP → Jaeger), Prometheus metrics |
+| Tool access | MCP server (official Python SDK, stdio) |
 | Frontend | React 18, TypeScript (strict), Vite, TanStack Query, Tailwind, Vitest |
 
 ---

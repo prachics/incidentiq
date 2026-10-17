@@ -27,6 +27,7 @@ dependencies = [
     "langgraph-checkpoint-postgres>=2.0",
     "anthropic>=0.40",
     "httpx>=0.27",                 # used by the Ollama provider
+    "mcp>=2.3,<3",                 # MCP server for the read-only diagnostic tools
 
     # ── Observability ───────────────────────────────────────
     "opentelemetry-api>=1.27",
