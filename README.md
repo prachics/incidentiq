@@ -12,14 +12,15 @@ is persisted and survives process death**, **write actions are gated
 structurally rather than by prompt**, and **there is an evaluation harness that
 produces real numbers, including bad ones.**
 
-**Status:** Phases 1–6 complete and measured: the agent, its evaluation, an approval API, a web UI, and tracing.
+**Status:** Phases 1–7 complete and measured: the agent, its evaluation, an approval API, a web UI,
+tracing (Jaeger or Langfuse), and an MCP server for the read-only tools.
 Every number below comes from the harness in this repository and can be
 reproduced with the commands given. CI runs the backend tests against Postgres with
 pgvector, and the web app's typecheck, tests and build, on every push.
 
 ![An investigation in the web UI on a local 14B model, sped up: payment-service hangs;
-the agent reads payment-service's and payment-db's logs and payment-db's disk metric,
-and concludes payment-db is running out of disk space](docs/demo.gif)
+the agent reads payment-service's and payment-db's logs, concludes payment-db is out of
+disk space, and stops at the approval panel with its proposed action](docs/demo.gif)
 
 ---
 
@@ -90,7 +91,8 @@ docker compose --profile app up -d # API at :8000, mock control plane at :8100
 
 | Metric | Result |
 |---|---|
-| **Recall@5** | **0.800** |
+| **Recall@5** (capped) | **0.800** |
+| Recall@5 (uncapped) | 0.608 |
 | Hit@5 | 0.917 |
 | MRR | 0.917 |
 | Median latency | 28.7 ms |
@@ -98,7 +100,12 @@ docker compose --profile app up -d # API at :8000, mock control plane at :8100
 Hybrid retrieval — pgvector cosine similarity plus Postgres full-text search,
 fused with weighted reciprocal rank fusion — over `BAAI/bge-small-en-v1.5`
 embeddings, 320-token chunks with 64-token overlap, service pre-filter applied
-before ranking. Measured across 12 labelled situations.
+before ranking. Measured across 12 labelled situations with 2–15 relevant
+documents each, searching the incident corpus with the query the agent holds
+after its first log read (the report plus the observed error signatures).
+*Capped* recall divides by min(relevant, 5), the most a top-5 list can find;
+*uncapped* divides by every relevant document. Recall figures elsewhere in this
+README are capped. [`docs/EVALS.md`](docs/EVALS.md) has the full ablation.
 
 ### Agent
 
@@ -156,7 +163,8 @@ graph TB
         N1[intake] --> N2[retrieve]
         N2 --> N3[plan]
         N3 --> N4[execute_tool]
-        N4 --> N5[reflect]
+        N4 --> N4b[retrieve_again]
+        N4b --> N5[reflect]
         N5 -->|needs more evidence| N3
         N5 -->|sufficient| N6[propose]
         N6 --> N7{{await_approval}}
@@ -187,6 +195,7 @@ graph TB
     CHUNK -.cites.-> CORP
     N4 --> RO --> MOCK
     N8 --> WR -->|HTTP, retried,<br/>key = approval id| CP
+    MCPC([MCP client]) -->|stdio| MCPS[MCP server<br/>read-only tools only] --> RO
     agent <-->|checkpoint after<br/>every node transition| STATE
 
     classDef store fill:#1f2937,stroke:#4b5563,color:#e5e7eb
@@ -312,6 +321,32 @@ docker compose up -d jaeger
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 uvicorn incidentiq.api.main:app
 open http://localhost:16686        # service: incidentiq-api
 ```
+
+Retrieval is a span of its own under the node that searched (`retrieval hybrid`,
+with the candidates each ranker returned and the result count), and the job span
+carries `session.id` set to the investigation id.
+
+**Viewing traces in Langfuse.** The same traces go to Langfuse, with no Langfuse
+SDK: Langfuse accepts OTLP and reads the GenAI attributes. Each LLM call shows as a
+generation with its model, `max_tokens`, input and output tokens and latency;
+retrieval and each tool attempt are spans under their node; and the Sessions view
+groups an investigation's traces (the start, then each decision or resume) by
+`session.id`. Use Langfuse Cloud or a
+[self-hosted Langfuse](https://langfuse.com/self-hosting/docker-compose), create a
+project, and point the exporter at it with the project's keys:
+
+```bash
+AUTH=$(printf '%s' "pk-lf-...:sk-lf-..." | base64 | tr -d '\n')
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://cloud.langfuse.com/api/public/otel   # self-hosted: http://localhost:3000/api/public/otel
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic%20$AUTH"                  # %20 is the space
+uvicorn incidentiq.api.main:app
+```
+
+Langfuse's own Compose file maps its Postgres to `127.0.0.1:5432`, the port
+IncidentIQ's Postgres uses: change one of the two before starting both. Checked
+against a self-hosted Langfuse 4: one investigation on `qwen2.5:7b` arrived as one
+trace with its 6 LLM calls as generations, token counts included, 3 retrieval spans
+and 2 tool spans, in the session named after the investigation.
 
 **Metrics** at `GET /metrics` (Prometheus): runs started and settled by status
 (crashed runs included), time per node and LLM latency by outcome (failures are
@@ -461,18 +496,18 @@ is more often a broken expectation than a broken model.
 | 3 | LangGraph agent, state persistence, tools, retry logic, evaluation harness | **complete** |
 | 4 | Approval API, audit trail, API keys, actions executed exactly once via a mock control plane | **complete** |
 | 5 | Web UI: investigations, live timeline, evidence, approvals, audit log | **complete** |
-| 6 | Tracing and metrics: OpenTelemetry traces across threads and HTTP, linked per investigation; Prometheus | **complete** |
+| 6 | Tracing and metrics: OpenTelemetry traces across threads and HTTP, linked per investigation, viewable in Jaeger or Langfuse; Prometheus | **complete** |
 | 7 | MCP server exposing the read-only diagnostic tools (write tools stay behind approval) | **complete** |
 
 ---
 
 ## Testing
 
-687 backend tests (the API, the agent, the MCP server and the evaluation harness) and 23 frontend tests.
+695 backend tests (the API, the agent, the MCP server and the evaluation harness) and 23 frontend tests.
 Beyond the usual unit coverage, four areas are tested specifically:
 
-- **State recovery.** A test kills a run mid-investigation, constructs a
-  completely fresh runner sharing nothing but the database, resumes it, and
+- **State recovery.** A test crashes a run mid-investigation with an injected
+  failure, constructs a fresh runner sharing nothing but the database, resumes it, and
   asserts the pre-crash reasoning is intact and the run continues rather than
   restarting.
 - **The approval gate.** Unapproved, rejected, mismatched-tool and nonexistent
@@ -526,7 +561,7 @@ backend tests; a second job typechecks, tests and builds the web app.
 | Embeddings | `BAAI/bge-small-en-v1.5`, 384-dimensional, local |
 | LLM | Swappable: Ollama (local, default), Anthropic, deterministic stub |
 | Packaging | Docker Compose |
-| Observability | OpenTelemetry (OTLP → Jaeger), Prometheus metrics |
+| Observability | OpenTelemetry (OTLP → Jaeger or Langfuse), Prometheus metrics |
 | Tool access | MCP server (official Python SDK, stdio) |
 | Frontend | React 18, TypeScript (strict), Vite, TanStack Query, Tailwind, Vitest |
 
@@ -534,4 +569,4 @@ backend tests; a second job typechecks, tests and builds the web app.
 
 ## License
 
-MIT
+MIT, see [`LICENSE`](LICENSE).

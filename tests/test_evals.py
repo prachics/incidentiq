@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import database_missing
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "api"))
@@ -647,7 +648,7 @@ class TestScenarioFixtures:
         try:
             c = psycopg.connect(get_settings().database_url, autocommit=True, connect_timeout=3)
         except psycopg.OperationalError:
-            pytest.skip("Postgres not reachable")
+            database_missing("Postgres not reachable")
         yield c
         c.close()
 

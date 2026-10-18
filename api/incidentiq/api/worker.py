@@ -107,8 +107,11 @@ class Worker:
                 # (a start, a decision, a resume) and links to the investigation's
                 # first job, so the segments of one investigation can be followed.
                 first = _trace_context(investigation_id)
+                # session.id groups an investigation's traces (start, decisions,
+                # resumes) in backends with a session view, Langfuse among them.
                 with span("investigation job", links=link_to(first),
-                          **{"incidentiq.investigation_id": investigation_id}) as current:
+                          **{"incidentiq.investigation_id": investigation_id,
+                             "session.id": investigation_id}) as current:
                     if first is None:
                         _save_trace_context(investigation_id, traceparent(current))
                     with self._factory() as runner:

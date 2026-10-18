@@ -110,7 +110,9 @@ async def _serve_stdio() -> None:
 
 
 def main() -> None:
-    setup_tracing("incidentiq-mcp", get_settings().otel_exporter_otlp_endpoint)
+    settings = get_settings()
+    setup_tracing("incidentiq-mcp", settings.otel_exporter_otlp_endpoint,
+                  headers=settings.otel_exporter_otlp_headers)
     anyio.run(_serve_stdio)
 
 

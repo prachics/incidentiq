@@ -114,7 +114,7 @@ def _start(client, worker):
 
 
 # ── Auth ────────────────────────────────────────────────────
-def test_endpoints_need_a_key(keys):
+def test_endpoints_need_a_key(conn, keys):
     client = TestClient(app)
     assert client.get("/investigations").status_code == 401
     assert client.get("/investigations",
@@ -480,7 +480,7 @@ def test_me_reports_the_role(keys):
     assert client.get("/me").status_code == 401
 
 
-def test_the_stream_needs_a_key_and_a_real_id(keys):
+def test_the_stream_needs_a_key_and_a_real_id(conn, keys):
     client = TestClient(app)
     assert client.get("/investigations/IQ-NOPE/stream").status_code == 401
     assert client.get("/investigations/IQ-NOPE/stream", headers=VIEWER).status_code == 404

@@ -17,6 +17,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
+from urllib.parse import unquote
 
 from opentelemetry import propagate, trace
 from opentelemetry.sdk.resources import Resource
@@ -32,8 +33,29 @@ tracer = trace.get_tracer("incidentiq")
 _configured = False
 
 
+def parse_otlp_headers(value: str) -> dict[str, str]:
+    """OTEL_EXPORTER_OTLP_HEADERS format: comma-separated key=value pairs, values
+    URL-encoded. Split on the first '=' only: base64 credentials end in '='."""
+    headers = {}
+    for pair in value.split(","):
+        if not pair.strip():
+            continue
+        key, sep, raw = pair.partition("=")
+        if not sep or not key.strip():
+            raise ValueError(f"OTLP header {pair.strip()!r} is not key=value")
+        headers[key.strip()] = unquote(raw.strip())
+    return headers
+
+
+def otlp_exporter(endpoint: str, headers: str = "") -> SpanExporter:
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+    return OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces",
+                            headers=parse_otlp_headers(headers) or None)
+
+
 def setup_tracing(service_name: str, endpoint: str = "",
-                  exporter: SpanExporter | None = None) -> bool:
+                  exporter: SpanExporter | None = None, headers: str = "") -> bool:
     """Install the global tracer provider once per process. Returns whether
     spans will be exported. A second call is a no-op: OpenTelemetry allows one
     global provider, and both the API and the worker live in one process."""
@@ -43,8 +65,7 @@ def setup_tracing(service_name: str, endpoint: str = "",
     if exporter is None:
         if not endpoint:
             return False
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-        exporter = OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")
+        exporter = otlp_exporter(endpoint, headers)
     provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)

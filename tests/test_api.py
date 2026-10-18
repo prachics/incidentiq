@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import database_missing
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,7 +56,7 @@ def test_readiness_reports_the_index_size(client):
     a readiness failure rather than a healthy-but-empty state."""
     r = client.get("/readyz")
     if r.status_code == 503:
-        pytest.skip("database not reachable")
+        database_missing("database not reachable")
     assert r.json()["indexed_chunks"] > 0
 
 
@@ -74,7 +75,7 @@ def test_tools_endpoint_separates_read_from_write(client):
 def test_stats_reports_the_corpus(client):
     r = client.get("/stats")
     if r.status_code == 503:
-        pytest.skip("database not reachable")
+        database_missing("database not reachable")
     body = r.json()
     assert body["services"] == 33
     assert body["incidents"] == 500

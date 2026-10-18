@@ -540,3 +540,26 @@ through the approval API like everyone else.
 **Reversal.** Exposing writes would mean an MCP tool that *proposes* an action
 into the approval queue, not one that executes it.
 
+---
+
+## 23. Langfuse reads the OpenTelemetry traces; no Langfuse SDK
+
+**Date:** Phase 7
+
+**Decision.** Traces can go to Langfuse through its OTLP endpoint, with the auth
+header in `OTEL_EXPORTER_OTLP_HEADERS`. Nothing Langfuse-specific is in the code:
+LLM spans already carry the GenAI attributes Langfuse turns into generations, and
+the job span's `session.id` is the attribute its Sessions view groups by. Retrieval
+got a span of its own, which helps in Jaeger as much as in Langfuse.
+
+**Why.** Decision 21 holds: the trace that matters spans the request, the worker,
+the graph and the control plane, and only OpenTelemetry covers all of it. Langfuse
+adds the LLM-centred views (generations, token counts per call, sessions) on top of
+the same spans, so it is a second backend, not a second instrumentation.
+
+**Cost.** Prompts and completions are not on the spans, so Langfuse shows each
+call's model, tokens and latency but not its text. Adding them would put incident
+data in every trace backend; they stay in the stored investigation state.
+
+**Reversal.** Unset the two variables, or point them at another OTLP backend.
+

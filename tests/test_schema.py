@@ -9,6 +9,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from conftest import database_missing
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "seeds"))
@@ -21,7 +22,7 @@ def conn():
     try:
         c = psycopg.connect(get_settings().database_url, autocommit=True, connect_timeout=3)
     except psycopg.OperationalError:
-        pytest.skip("Postgres not reachable - run: docker compose up -d postgres")
+        database_missing("Postgres not reachable - run: docker compose up -d postgres")
     yield c
     c.close()
 

@@ -123,6 +123,10 @@ def test_a_run_is_one_trace_with_every_node_in_order(conn, keys, spans):
         assert c.attributes["gen_ai.usage.output_tokens"] == 10
     assert tools[0].attributes["incidentiq.tool.attempt"] == 1
     assert tools[0].attributes["incidentiq.tool.status"] == "success"
+    retrievals = _named(found, "retrieval ")
+    assert sorted(node_ids[r.parent.span_id] for r in retrievals) == \
+        ["node retrieve", "node retrieve_again"]
+    assert job.attributes["session.id"] == job.attributes["incidentiq.investigation_id"]
 
 
 def test_a_decision_runs_in_its_own_trace_and_links_to_the_first(conn, keys, spans):
@@ -152,6 +156,7 @@ def test_a_decision_runs_in_its_own_trace_and_links_to_the_first(conn, keys, spa
     [link] = job.links
     assert (link.context.trace_id, link.context.span_id) == \
         (first_job.context.trace_id, first_job.context.span_id)
+    assert job.attributes["session.id"] == first_job.attributes["session.id"] == iid
 
 
 def test_a_follow_up_resume_keeps_the_decision_trace(conn, keys, spans):
@@ -393,7 +398,7 @@ def test_a_crashed_job_counts_as_a_failed_run(conn, keys):
 
 
 
-def test_only_the_operational_endpoints_are_left_untraced(spans, keys):
+def test_only_the_operational_endpoints_are_left_untraced(conn, spans, keys):
     """Exclusions match the exact paths, not any URL containing the word."""
     client = TestClient(app)
     client.get("/healthz")
@@ -475,3 +480,93 @@ def test_an_endpoint_installs_an_otlp_exporter_on_import():
         "print([type(x.span_exporter).__name__ for x in procs])",
         OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:9")
     assert out.splitlines() == ["TracerProvider incidentiq-api", "['OTLPSpanExporter']"]
+
+
+def test_otlp_headers_parse_like_the_otel_environment_variable():
+    assert telemetry.parse_otlp_headers("") == {}
+    # A base64 credential ends in '=', and the value is URL-encoded: %20 is the space.
+    assert telemetry.parse_otlp_headers("Authorization=Basic%20cGstbGY6c2stbGY=, x-team = sre") == \
+        {"Authorization": "Basic cGstbGY6c2stbGY=", "x-team": "sre"}
+    with pytest.raises(ValueError):
+        telemetry.parse_otlp_headers("Authorization")
+
+
+def test_the_app_sends_the_configured_headers_with_each_export():
+    """The production path end to end: settings -> app import -> exporter -> HTTP.
+    Langfuse's OTLP endpoint refuses an export without its Basic auth header."""
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    received = []
+
+    class Capture(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            received.append((self.path, self.headers.get("Authorization")))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Capture)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        _fresh_process(
+            "import incidentiq.api.main\n"
+            "from opentelemetry import trace\n"
+            "from incidentiq import telemetry\n"
+            "with telemetry.span('one'): pass\n"
+            "trace.get_tracer_provider().force_flush()",
+            OTEL_EXPORTER_OTLP_ENDPOINT=f"http://127.0.0.1:{server.server_port}/api/public/otel",
+            OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic%20cGstbGY6c2stbGY=")
+    finally:
+        server.shutdown()
+    assert received == [("/api/public/otel/v1/traces", "Basic cGstbGY6c2stbGY=")]
+
+
+def test_retrieval_is_its_own_span_with_what_it_found(conn, spans):
+    from incidentiq.rag.retrieval import Filters, search
+    from pgvector.psycopg import register_vector
+
+    register_vector(conn)
+    if conn.execute("SELECT count(*) FROM chunks").fetchone()[0] == 0:
+        database_missing("corpus not indexed")
+    hits = search(conn, "connection pool exhausted", filters=Filters(service="api-gateway"),
+                  limit=3)
+    [found] = _named(spans(), "retrieval ")
+    assert found.name == "retrieval hybrid"
+    assert found.attributes["incidentiq.retrieval.mode"] == "hybrid"
+    assert found.attributes["incidentiq.retrieval.service"] == "api-gateway"
+    assert found.attributes["incidentiq.retrieval.result_count"] == len(hits) == 3
+    assert found.attributes["incidentiq.retrieval.vector_candidates"] > 0
+    assert found.attributes["incidentiq.retrieval.keyword_candidates"] > 0
+
+
+@pytest.mark.parametrize("mode, vector, keyword", [("hybrid", 7, 3), ("keyword", 0, 3),
+                                                    ("vector", 7, 0)])
+def test_the_retrieval_span_counts_what_each_ranker_returned(mode, vector, keyword,
+                                                             spans, monkeypatch):
+    from incidentiq.rag import retrieval
+
+    class NoModel:
+        def embed_query(self, _text):
+            return [0.0]
+
+    monkeypatch.setattr(retrieval, "_vector_search",
+                        lambda *_a: [(i, 0.5) for i in range(1, vector + 1)])
+    monkeypatch.setattr(retrieval, "_keyword_search",
+                        lambda *_a: [(i, 0.5) for i in range(101, 101 + keyword)])
+
+    class NoRows:
+        def execute(self, *_a):
+            return self
+
+        def fetchall(self):
+            return []
+
+    assert retrieval.search(NoRows(), "q", mode=mode, provider=NoModel()) == []
+    [found] = _named(spans(), "retrieval ")
+    assert found.name == f"retrieval {mode}"
+    assert found.attributes["incidentiq.retrieval.vector_candidates"] == vector
+    assert found.attributes["incidentiq.retrieval.keyword_candidates"] == keyword
+    assert found.attributes["incidentiq.retrieval.result_count"] == 0

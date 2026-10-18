@@ -47,6 +47,7 @@ import numpy as np
 import psycopg
 
 from incidentiq.rag.embeddings import EmbeddingProvider, get_embedding_provider
+from incidentiq.telemetry import span
 
 # Fusion parameters, chosen by measurement rather than by citing a default.
 # See `evals/retrieval_eval.py --fusion-sweep` and docs/EVALS.md.
@@ -247,6 +248,22 @@ def search(
     lists to begin with.
     """
     filters = filters or Filters()
+    with span(f"retrieval {mode}", **{"incidentiq.retrieval.mode": mode,
+                                      "incidentiq.retrieval.limit": limit,
+                                      "incidentiq.retrieval.service": filters.service}) as current:
+        out, vector_hits, keyword_hits = _search(conn, query, filters, limit, mode,
+                                                 candidate_multiplier, provider, rrf_k,
+                                                 vector_weight, keyword_weight)
+        current.set_attribute("incidentiq.retrieval.vector_candidates", len(vector_hits))
+        current.set_attribute("incidentiq.retrieval.keyword_candidates", len(keyword_hits))
+        current.set_attribute("incidentiq.retrieval.result_count", len(out))
+    return out
+
+
+def _search(conn: psycopg.Connection, query: str, filters: Filters, limit: int,
+            mode: SearchMode, candidate_multiplier: int, provider: EmbeddingProvider | None,
+            rrf_k: int, vector_weight: float, keyword_weight: float,
+            ) -> tuple[list[RetrievedDoc], list[tuple[int, float]], list[tuple[int, float]]]:
     provider = provider or get_embedding_provider()
     candidates = limit * candidate_multiplier
 
@@ -271,7 +288,7 @@ def search(
 
     top = ordered[:limit]
     if not top:
-        return []
+        return [], vector_hits, keyword_hits
 
     ids = [cid for cid, _ in top]
     rows = conn.execute(
@@ -295,7 +312,7 @@ def search(
             keyword_score=prov.get("keyword_score"),
             rrf_score=prov["rrf"],
         ))
-    return out
+    return out, vector_hits, keyword_hits
 
 
 def hydrate(conn: psycopg.Connection, docs: list[RetrievedDoc]) -> list[RetrievedDoc]:

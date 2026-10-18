@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # ── Observability ───────────────────────────────────────
     # OTLP/HTTP base URL, e.g. http://localhost:4318. Empty: no traces exported.
     otel_exporter_otlp_endpoint: str = ""
+    # Headers sent with every export, in the OTLP format "key=value,key2=value2"
+    # (values URL-encoded). A backend that needs auth, such as Langfuse, takes it here.
+    otel_exporter_otlp_headers: str = ""
 
     # ── Agent behaviour ─────────────────────────────────────
     max_iterations: int = 8

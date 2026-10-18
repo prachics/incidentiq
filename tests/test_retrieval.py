@@ -9,6 +9,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from conftest import database_missing
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "api"))
@@ -101,10 +102,10 @@ def conn():
     try:
         c = psycopg.connect(get_settings().database_url, autocommit=True, connect_timeout=3)
     except psycopg.OperationalError:
-        pytest.skip("Postgres not reachable")
+        database_missing("Postgres not reachable")
     register_vector(c)
     if c.execute("SELECT count(*) FROM chunks").fetchone()[0] == 0:
-        pytest.skip("no chunks - run: python -m incidentiq.rag.indexer")
+        database_missing("no chunks - run: python -m incidentiq.rag.indexer")
     yield c
     c.close()
 

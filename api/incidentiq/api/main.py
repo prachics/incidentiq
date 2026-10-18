@@ -59,7 +59,8 @@ app = FastAPI(
 app.include_router(investigations.router)
 app.include_router(approvals.router)
 
-setup_tracing("incidentiq-api", get_settings().otel_exporter_otlp_endpoint)
+setup_tracing("incidentiq-api", get_settings().otel_exporter_otlp_endpoint,
+              headers=get_settings().otel_exporter_otlp_headers)
 # Server spans for every request except the probes and the scrape. The list is
 # regexes searched in the full URL, so they are anchored to the exact paths: a
 # plain "metrics" would also drop /investigations/IQ-metrics-1/resume.
