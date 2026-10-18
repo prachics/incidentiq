@@ -287,6 +287,14 @@ npm run build      # then the API serves it at http://localhost:8000/app/
 npm test           # Vitest + Testing Library
 ```
 
+<p align="center">
+  <img src="docs/ui-investigation.png" alt="An investigation waiting for approval: the agent's steps with timings, the proposed action, the root cause with confidence and cited incidents, and the retrieved documents with their vector and keyword ranks" width="900"/>
+</p>
+
+<p align="center">
+  <img src="docs/ui-edit-approve.png" alt="Edit and approve: a form generated from the restart_service argument schema" width="900"/>
+</p>
+
 - **Investigations:** start one from a report, see each run's status at a glance.
 - **Timeline:** every node the agent ran, in order, with durations, retries and failures, updated live.
 - **Approval panel:** approve, approve with edited arguments (a form generated from the tool's JSON
